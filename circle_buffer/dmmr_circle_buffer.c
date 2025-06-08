@@ -65,6 +65,19 @@ struct node_circle_buffer* get_current_node(struct circle_buffer* this) {
         return 0;
 }
 
+int start(struct circle_buffer *this){
+    if(this){
+        pthread_mutex_init(&this->fifo_lock, 0);
+        pthread_create(&(this->fifo_thread), 0, fifo_worker, this);
+        return 0;
+    }
+    else{
+        return EOF;
+    }
+}
+
+void stop(struct circle_buffer *this){}
+
 struct circle_buffer* new_circle_buffer(size_t size) {
     struct circle_buffer* cb = calloc(1, sizeof(struct circle_buffer));
     if (!cb)
@@ -85,13 +98,12 @@ struct circle_buffer* new_circle_buffer(size_t size) {
     } while (++p < p1);
 
     cb->cursor = CIRCLEQ_EMPTY(&cb->head) ? 0 : CIRCLEQ_FIRST(&cb->head);
-    pthread_mutex_init(&cb->fifo_lock, 0);
 
     cb->enqueue = enqueue;
     cb->get_current_node = get_current_node;
     cb->iterate = iterate;
-
-    pthread_create(&(cb->fifo_thread), 0, fifo_worker, cb);
+    cb->start = start;
+    cb->stop = stop;
 
     return cb;
 }
