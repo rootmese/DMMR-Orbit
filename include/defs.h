@@ -1,7 +1,34 @@
 #ifndef __DEFS_H__
 #define __DEFS_H__
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <pthread.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/errno.h>
+#include <sys/queue.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
+
+#include <dmmr_circle_buffer.h>
+#include <dmmr_parser.h>
+#include <dmmr_scheduler.h>
+#include <dmmr_server.h>
+#include <session_connection.h>
+#include <dmmr_session_connection_manager.h>
 
 #ifndef MTU_SIZE
 #define MTU_SIZE 1500
@@ -16,20 +43,57 @@
 #endif
 
 typedef enum{
-    proto_udp_t = 0x00;
-    proto_tcp_t = 0x01;
+    proto_none_udp = 0x00,
+    proto_udp_t    = 0x01,
+    proto_tcp_t    = 0x02,
 }proto_t;
 
+typedef enum {
+    EZP_DNS     = 0,
+    EZP_IPV4    = AF_INET,
+    EZP_IPV6    = AF_INET6,
+    EZP_INVALID = ~0
+} ezp_addr_type;
+
 struct node {
-    proto_t proto;
+    ezp_addr_type family;
     uint16_t port;
     int fd;
-	uint32_t sin_addr;
+	struct sockaddr ipv4;
+    struct sockaddr_in6 ipv6;
     unsigned value_size;
     unsigned char value[1500];
     uint64_t arrival;
     uint64_t deadline;
     uint8_t flags;
+};
+
+struct none_node{
+    proto_t proto;
+};
+
+struct tcp_node {
+    proto_t proto;
+    struct node node;
+    uint8_t run;
+    pthread_t accept_thread;
+    void (*on_accept_cb)(struct node*);
+    void (*on_dispatch_cb)(struct node*)
+};
+
+struct udp_node {
+    proto_t proto;
+    struct node node;
+    uint8_t run;
+    pthread_t accept_thread;
+    void (*on_accept_cb)(struct node*);
+    void (*on_dispatch_cb)(struct node*)
+};
+
+union protocol_base_cb{
+    struct none_node none;
+    struct tcp_node tcp;
+    struct udp_node udp;
 };
 
 
