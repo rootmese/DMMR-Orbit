@@ -13,8 +13,9 @@ TARGET := $(BIN_DIR)/dmr-server
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 
-# Includes no estilo <dmmr_parser.h>
-INCLUDES := -I$(INC_DIR)
+# Adiciona recursivamente todos os subdiretórios de include
+INCLUDE_DIRS := $(shell find $(INC_DIR) -type d)
+INCLUDES := $(addprefix -I, $(INCLUDE_DIRS))
 
 # Flags comuns
 CFLAGS := -Wall -Wextra -std=gnu11 $(INCLUDES)
@@ -48,7 +49,7 @@ $(TARGET): $(OBJS) | $(BIN_DIR)
 # Compilação de .c → .o
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	@echo "[CC] $< → $@"
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ 
 
 # Criação dos diretórios bin e build se não existirem
 $(BUILD_DIR):
@@ -56,7 +57,8 @@ $(BUILD_DIR):
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
-	
+
+# Gerar scanner.c a partir de scanner.l, se usado
 LEX = flex
 LFLAGS = --header-file=scanner.h
 

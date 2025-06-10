@@ -15,15 +15,22 @@
 #define CIRCLE_BUFFER_SIZE 9000
 #endif
 
+typedef enum{
+    proto_udp_t = 0x00;
+    proto_tcp_t = 0x01;
+}proto_t;
+
 struct node {
+    proto_t proto;
     uint16_t port;
     int fd;
+	uint32_t sin_addr;
     unsigned value_size;
-    unsigned char value[MTU_SIZE];
-
-    uint64_t arrival;   // CLOCK_MONOTONIC timestamp (ns ou us)
-    uint64_t deadline;  // Calculado pelo SessionConnection
-    uint8_t  flags;     // Ex: PRIORITY, DROPPABLE, RETRANSMIT, etc.
+    unsigned char value[1500];
+    uint64_t arrival;
+    uint64_t deadline;
+    uint8_t flags;
 };
+
 
 #endif

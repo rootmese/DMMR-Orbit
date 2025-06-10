@@ -60,6 +60,74 @@ struct void sort_poll_by_arrival_ptr(struct node_circle_buffer *base, size_t tot
     }
 }
 
+// Heapify para cima (sobe o elemento na heap para manter propriedade de min-heap)
+static void heapify_up(struct node_circle_buffer *base, size_t index) {
+    while (index > 0) {
+        size_t parent_index = (index - 1) / 2;
+        struct node_circle_buffer *node = base + index;
+        struct node_circle_buffer *parent = base + parent_index;
+
+        if (parent->n.arrival <= node->n.arrival)
+            break;
+
+        swap_nodes(parent, node);
+        index = parent_index;
+    }
+}
+
+// Inserção de novo node no heap
+static void heap_insert(struct node_circle_buffer *base, size_t *size, struct node_circle_buffer *value) {
+    // Coloca o novo valor na posição final do heap
+    struct node_circle_buffer *dest = base + *size;
+    *dest = *value;
+
+    // Ajusta para manter a propriedade de heap
+    heapify_up(base, *size);
+
+    (*size)++;
+}
+
+// Remove o menor elemento (raiz) do heap e retorna
+static struct node_circle_buffer heap_pop_min(struct node_circle_buffer *base, size_t *size) {
+    if (*size == 0)
+        return (struct node_circle_buffer){0};  // ou algum valor padrão/nulo
+
+    struct node_circle_buffer min = *base;  // raiz
+
+    // Move o último para a raiz
+    struct node_circle_buffer *last = base + (*size - 1);
+    *base = *last;
+
+    (*size)--;
+
+    // Refaz heap a partir da raiz
+    size_t i = 0;
+    size_t n = *size;
+
+    while (1) {
+        size_t left = (i << 1) + 1;
+        size_t right = (i << 1) + 2;
+        size_t smallest = i;
+
+        struct node_circle_buffer *current = base + i;
+
+        if (left < n && (base + left)->n.arrival < current->n.arrival)
+            smallest = left;
+
+        if (right < n && (base + right)->n.arrival < (base + smallest)->n.arrival)
+            smallest = right;
+
+        if (smallest == i)
+            break;
+
+        swap_nodes(base + i, base + smallest);
+        i = smallest;
+    }
+
+    return min;
+}
+
+
 
 static void send_buffer(struct session_connection_pool *conn, size_t size) {
     if (!conn || !conn->poll || conn->pool_size == 0)
