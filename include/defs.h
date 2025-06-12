@@ -29,6 +29,11 @@
 #include <dmmr_server.h>
 #include <session_connection.h>
 #include <dmmr_session_connection_manager.h>
+#include "__vcpy.h"
+#include "__bcpy.h"
+#include "crc.h"
+#include "update_session_counter.h"
+#include "__node_cmp.h"
 
 #ifndef MTU_SIZE
 #define MTU_SIZE 1500
@@ -43,7 +48,7 @@
 #endif
 
 typedef enum{
-    proto_none_udp = 0x00,
+    proto_none_t = 0x00,
     proto_udp_t    = 0x01,
     proto_tcp_t    = 0x02,
 }proto_t;
@@ -74,7 +79,8 @@ struct none_node{
 
 struct tcp_node {
     proto_t proto;
-    struct node node;
+    unsigned node_count;
+    struct node *node;
     uint8_t run;
     pthread_t accept_thread;
     void (*on_accept_cb)(struct node*);
@@ -83,6 +89,7 @@ struct tcp_node {
 
 struct udp_node {
     proto_t proto;
+    unsigned node_count;
     struct node node;
     uint8_t run;
     pthread_t accept_thread;

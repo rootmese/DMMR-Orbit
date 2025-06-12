@@ -58,7 +58,7 @@ static void* tcp_receiver_thread(void *arg) {
             clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
             clock_gettime(CLOCK_REALTIME, &ts_realtime);
             n->node.proto = proto_t.proto_tcp_t;
-            n->node.port = htons(node->node.port);
+            n->node->port = htons(node->node->port);
             n->node.arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
             n->node.deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
             if(n->on_accept_cb)
@@ -77,19 +77,19 @@ static void *accept_thread(void *arg) {
     do {
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(node->node.fd, &readfds);
+        FD_SET(node->node->fd, &readfds);
 
         struct timeval timeout = {
             .tv_sec = 1,
             .tv_usec = 0
         };
 
-        int ret = select(node->node.fd + 1, &readfds, 0, 0, &timeout);
+        int ret = select(node->nodefd + 1, &readfds, 0, 0, &timeout);
         if(ret <= 0)
             continue;
 
-        if(FD_ISSET(node->node.fd, &readfds)) {
-            int client_fd = accept(node->node.fd, (struct sockaddr*)&client_addr, &addr_len);
+        if(FD_ISSET(node->node->fd, &readfds)) {
+            int client_fd = accept(node->node->fd, (struct sockaddr*)&client_addr, &addr_len);
             if(client_fd < 0) {
                 if(node->run)
                     continue;
@@ -100,30 +100,26 @@ static void *accept_thread(void *arg) {
             if(n){
                 n->fd = client_fd;
                 n->port = htons(client_addr.sin_port);
-                __vcpy(&(n->sin_addr), &(client_addr.sin_addr.s_addr), sizeof(struct sockaddr));
+                __vcpy(&(node->node->sin_addr), &(client_addr.sin_addr.s_addr), sizeof(struct sockaddr));
                 n->run = !0;
-                pthread_create(&node->thread, 0, tcp_receiver_thread, node);
+                (void)pthread_create(&node->thread, 0, tcp_receiver_thread, node);
+                node->nodefd = client_fd;
+                node->node->port = htons(client_addr.sin_port);
+                node->node->sin_addr = client_addr.sin_addr.s_addr;
+                if(node->on_dispatch_cb)
+                    node->on_dispatch_cb(&node);
             }
-            node->node.fd = client_fd;
-            node->node.port = htons(client_addr.sin_port);
-            node->node.sin_addr = client_addr.sin_addr.s_addr;
-            if(node->on_dispatch_cb)
-                node->on_dispatch_cb(&node->node);
         }
     } while(node->run);
     return 0;
 }
 
-// TODO Avoid memleak recicle closed connection
-/*
-    Something like this:
-       struct tcp_node *p = tcp_pool; *p1 = p + tcp_pool_size;
-       do{
-            if(!p)
-                return p;
-       }while(++p < p1);
-*/
 struct tcp_node *get_tcp_node(void) {
+    register struct tcp_node *p = tcp_pool;
+    register struct tcp_node *p1 = tcp_pool + tcp_pool_size;
+    for (; p < p1; ++p)
+        if (!(p->run))
+            return p;
     if(tcp_pool_count >= tcp_pool_size) {
         tcp_pool_size *= 2;
         tcp_pool = (struct tcp_node*)realloc(tcp_pool, tcp_pool_size * sizeof(struct tcp_node));
@@ -137,15 +133,15 @@ int start_tcp_service(struct tcp_node *node) {
     int sock;
     int ret;
     if(node){
-        sock = node->node.fd = socket(AF_INET, SOCK_STREAM, 0);
+        sock = node->node->fd = socket(AF_INET, SOCK_STREAM, 0);
         if(sock == EOF)
             goto return_error;
-        int flags = fcntl(node->node.fd, F_GETFL, 0);
-        ret = fcntl(node->node.fd, F_SETFL, flags | O_NONBLOCK);
+        int flags = fcntl(node->node->fd, F_GETFL, 0);
+        ret = fcntl(node->node->fd, F_SETFL, flags | O_NONBLOCK);
         if(ret)
             goto return_socket_error;
         int opt = 1;
-        ret = setsockopt(node->node.fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        ret = setsockopt(node->node->fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
         if(ret)
             goto return_socket_error;
         //TODO use generica server_addr
@@ -154,16 +150,16 @@ int start_tcp_service(struct tcp_node *node) {
             .sin_addr.s_addr = INADDR_ANY,
             .sin_port = htons(port)
         };
-        ret = bind(node->node.fd, (struct sockaddr*)&server_addr, sizeof(server_addr));
+        ret = bind(node->node->fd, (struct sockaddr*)&server_addr, sizeof(server_addr));
         if(ret)
             goto return_socket_error;
-        ret = listen(node->node.fd, 64));
+        ret = listen(node->node->fd, 64));
         if(ret)
             goto return_socket_error;
         node->run = !0;
         if(pthread_create(&node->accept_thread, 0, accept_thread, node)) {
             perror("accept thread creation failed");
-            close(node->node.fd);
+            close(node->node->fd);
             return EOF;
         }
         return 0;
@@ -194,13 +190,13 @@ int connect_tcp_server(struct tcp_node *tcp_node, const char *ip){
                     goto return_error;
                 memset(server_addr, 0, sizeof(struct sockaddr_in));
                 server_addr.sin_family = AF_INET;
-                server_addr.sin_port = htons(tcp_node->node.port);
+                server_addr.sin_port = htons(tcp_node->node->port);
                 ret = connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr));
                 if(ret)
                     goto return_close_socket_error;
                 else{
                     n->fd = sockfd;
-                    n->port =  htons(tcp_node->node.port);
+                    n->port =  htons(tcp_node->node->port);
                     __vcpy(&(n->ipv4), &(server_addr->sin_addr), sizeof(struct in_addr_in));
                     n->run = !0;
                     pthread_create(&n->thread, 0, tcp_receiver_thread, tcp_node);
@@ -214,13 +210,13 @@ int connect_tcp_server(struct tcp_node *tcp_node, const char *ip){
                     goto return_error;
                 memset(server_addr6, 0, sizeof(struct sockaddr_in6));
                 server_addr6->sin6_family = AF_INET6;
-                server_addr6->sin6_port = htons(tcp_node->node.port);
+                server_addr6->sin6_port = htons(tcp_node->node->port);
                 int ret = connect(sockfd, (struct sockaddr*)server_addr6, sizeof(struct sockaddr_in6));
                 if (ret)
                     goto return_close_socket_error;
                 else {
                     n->fd = sockfd;
-                    n->port = htons(tcp_node->node.port);
+                    n->port = htons(tcp_node->node->port);
                     __vcpy(&(n->ipv6), &(server_addr6->sin6_addr), sizeof(struct in6_addr));
                     n->run = !0;
                     pthread_create(&n->thread, NULL, tcp_receiver_thread, tcp_node);

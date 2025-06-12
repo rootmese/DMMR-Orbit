@@ -8,37 +8,58 @@
 
 static struct circle_buffer *circle_buffer = 0;
 
-static struct session_connection_pool *pool = 0;
+static unsigned session_connection_pool_recno_count = 0;
 
-static uint16_t session_count = 0;
+static unsigned session_connection_pool_recno_size = 0;
 
-struct session_connection_pool_hash{
+static void (*snd_cb)(union protocol_base_cb *session, struct node*, unsigned size) = 0;
+
+struct session_connection_pool_recno{
     uint16_t port;
-    session_connection_pool *pool;
-}session_connection_pool_hash[0x1000];
+    struct session_connection_pool *pool;
+};
 
-static inline void swap_nodes(struct node_circle_buffer *a, struct node_circle_buffer *b) {
-    struct node temp = a->n;
-    a->n = b->n;
-    b->n = temp;
+static struct session_connection_pool_recno *recno = 0;
+
+struct session_connection_pool *get_recno_slot(void) {
+    register struct session_connection_pool_recno *p = recno;
+    register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
+    for (; p < p1; ++p)
+        if (!(p->run))
+            return p;
+    if (session_connection_pool_recno_count >= udp_pool_size) {
+        session_connection_pool_recno_size * 2;
+        udp_pool = (struct udp_node*)realloc(udp_pool, udp_pool_size * sizeof(struct udp_node));
+        if (!udp_pool)
+            return 0;
+    }
+    return udp_pool + udp_pool_count++;
 }
 
-static void heapify_ptr(struct node_circle_buffer *base, size_t n, size_t i) {
+// Changed parameter types from node_circle_buffer to node
+static inline void swap_nodes(struct node *a, struct node *b) {
+    struct node temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Changed base type from node_circle_buffer to node
+static void heapify_ptr(struct node *base, size_t n, size_t i) {
     size_t smallest = i;
     size_t l = (i << 1) + 1; // left = 2*i + 1
     size_t r = (i << 1) + 2; // right = 2*i + 2
 
-    struct node_circle_buffer *pi = base + i;
-    struct node_circle_buffer *pl = base + l;
-    struct node_circle_buffer *pr = base + r;
-    struct node_circle_buffer *ps = base + smallest;
+    struct node *pi = base + i;
+    struct node *pl = base + l;
+    struct node *pr = base + r;
+    struct node *ps = base + smallest;
 
-    if (l < n && pl->n.arrival < ps->n.arrival)
+    if (l < n && pl->arrival < ps->arrival)
         smallest = l;
 
     ps = base + smallest;
 
-    if (r < n && pr->n.arrival < ps->n.arrival)
+    if (r < n && pr->arrival < ps->arrival)
         smallest = r;
 
     if (smallest != i) {
@@ -47,7 +68,8 @@ static void heapify_ptr(struct node_circle_buffer *base, size_t n, size_t i) {
     }
 }
 
-struct void sort_poll_by_arrival_ptr(struct node_circle_buffer *base, size_t total) {
+// Changed base type from node_circle_buffer to node
+void sort_poll_by_arrival_ptr(struct node *base, size_t total) {
     if (!base || total < 2)
         return;
 
@@ -60,14 +82,14 @@ struct void sort_poll_by_arrival_ptr(struct node_circle_buffer *base, size_t tot
     }
 }
 
-// Heapify para cima (sobe o elemento na heap para manter propriedade de min-heap)
-static void heapify_up(struct node_circle_buffer *base, size_t index) {
+// Changed base type from node_circle_buffer to node
+static void heapify_up(struct node *base, size_t index) {
     while (index > 0) {
         size_t parent_index = (index - 1) / 2;
-        struct node_circle_buffer *node = base + index;
-        struct node_circle_buffer *parent = base + parent_index;
+        struct node *node = base + index;
+        struct node *parent = base + parent_index;
 
-        if (parent->n.arrival <= node->n.arrival)
+        if (parent->arrival <= node->arrival)
             break;
 
         swap_nodes(parent, node);
@@ -75,10 +97,10 @@ static void heapify_up(struct node_circle_buffer *base, size_t index) {
     }
 }
 
-// Inserção de novo node no heap
-static void heap_insert(struct node_circle_buffer *base, size_t *size, struct node_circle_buffer *value) {
+// Changed parameter types from node_circle_buffer to node
+static void heap_insert(struct node *base, size_t *size, struct node *value) {
     // Coloca o novo valor na posição final do heap
-    struct node_circle_buffer *dest = base + *size;
+    struct node *dest = base + *size;
     *dest = *value;
 
     // Ajusta para manter a propriedade de heap
@@ -87,15 +109,15 @@ static void heap_insert(struct node_circle_buffer *base, size_t *size, struct no
     (*size)++;
 }
 
-// Remove o menor elemento (raiz) do heap e retorna
-static struct node_circle_buffer heap_pop_min(struct node_circle_buffer *base, size_t *size) {
+// Changed return type from node_circle_buffer to node
+static struct node heap_pop_min(struct node *base, size_t *size) {
     if (*size == 0)
-        return (struct node_circle_buffer){0};  // ou algum valor padrão/nulo
+        return (struct node){0};  // ou algum valor padrão/nulo
 
-    struct node_circle_buffer min = *base;  // raiz
+    struct node min = *base;  // raiz
 
     // Move o último para a raiz
-    struct node_circle_buffer *last = base + (*size - 1);
+    struct node *last = base + (*size - 1);
     *base = *last;
 
     (*size)--;
@@ -109,12 +131,12 @@ static struct node_circle_buffer heap_pop_min(struct node_circle_buffer *base, s
         size_t right = (i << 1) + 2;
         size_t smallest = i;
 
-        struct node_circle_buffer *current = base + i;
+        struct node *current = base + i;
 
-        if (left < n && (base + left)->n.arrival < current->n.arrival)
+        if (left < n && (base + left)->arrival < current->arrival)
             smallest = left;
 
-        if (right < n && (base + right)->n.arrival < (base + smallest)->n.arrival)
+        if (right < n && (base + right)->arrival < (base + smallest)->arrival)
             smallest = right;
 
         if (smallest == i)
@@ -127,57 +149,7 @@ static struct node_circle_buffer heap_pop_min(struct node_circle_buffer *base, s
     return min;
 }
 
-
-
-static void send_buffer(struct session_connection_pool *conn, size_t size) {
-    if (!conn || !conn->poll || conn->pool_size == 0)
-        return;
-
-    unsigned rms = 0;
-    sort_poll_by_arrival_ptr(conn->poll, conn->pool_size);
-
-    struct node_circle_buffer *base = conn->poll;
-    struct node_circle_buffer *p = base;
-    struct node_circle_buffer *p0 = base + conn->pool_size;
-
-    size_t total_bytes_sent = 0;
-    size_t limit = size ? size : 9000;
-
-    do {
-        struct node *n = &p->n;
-        if (total_bytes_sent + n->value_size > limit)
-            break;
-
-        printf("Enviando pacote: port=%u, fd=%d, size=%u, arrival=%llu, deadline=%llu\n",
-               n->port, n->fd, n->value_size,
-               (unsigned long long)n->arrival,
-               (unsigned long long)n->deadline);
-
-        total_bytes_sent += n->value_size;
-        ++rms;
-    } while (++p < p0);
-
-    if (rms > 0 && rms <= conn->pool_size) {
-        __bcpy(conn->poll, conn->poll + rms, (conn->pool_size - rms) * sizeof(struct node_circle_buffer));
-        conn->pool_size -= rms;
-    }
-}
-
-
-
-
-int start_session_connection(struct circle_buffer *__cb, uint16_t __ports){
-	if(pool)
-		return EOF;
-	else{
-		pool = (struct session_connection_pool*)calloc(__ports, sizeof(struct session_connection_pool));
-		if(!pool)
-			return EOF;
-        circle_buffer = __cb;
-        return 0;
-	}
-}
-
+// Changed poll handling to use node instead of node_circle_buffer
 static void* session_worker(void* arg) {
     struct session_connection_pool* conn = (struct session_connection_pool*)arg;
     if (!conn || !conn->poll || !circle_buffer)
@@ -185,111 +157,117 @@ static void* session_worker(void* arg) {
     struct node_circle_buffer *cursor = conn->cursor;
     struct circleq_head *head = &circle_buffer->head;
     do {
-        pthread_mutex_lock(&conn->mutex);
-        if(conn->cursor.port == conn->port)
-            *(conn->poll + conn->pool_size++) = conn->cursor;
-        conn->cursor =  circle_buffer->iterate(cursor, head);
-        pthread_mutex_unlock(&conn->mutex);
-        unsigned size = get_session_size(conn->port);
-        if (size >= 9000 && conn->pool_size > 0) {
-            pthread_mutex_lock(&conn->mutex);
-            send_buffer(conn, 0);
+        if(conn->pool_count + 1 > conn->pool_size){
+            pthread_mutex_lock(&conn->mutex); // pouco entrará aqui, garantia
+            conn->pool_size *= 2;
+            conn->poll = (struct node*)realloc(conn->poll,conn->pool_size * sizeof(struct node));
+            if(!(conn->poll)){
+                pthread_mutex_unlock(&conn->mutex);
+                goto return_fail;
+            }
             pthread_mutex_unlock(&conn->mutex);
         }
-        usleep(0x01); // TODO Isso precisa ser escalonado de acordo com a formula de tempo que um curso percorre o circle_buffer
-    }while(~0);
+        if(!(node_cmp(conn->cursor, get_session_node(conn->session)))){
+            (conn->poll + conn->pool_count) = conn->cursor->n;
+            conn->pool_count++;
+            unsigned size = get_session_size(conn);
+            if (size >= 9000 && conn->pool_size > 0) {
+                unsigned count = 0;
+                unsigned siz = 0;
+                struct node *n = conn->poll, *n0 = n + conn->pool_count;
+                do{
+                    siz += n->value_size;
+                    ++count;
+                }while(siz <= 9000 && ++n < n0);
+                if(snd_cb)
+                    snd_cb(conn->session, conn->pool, count);
+                if(count <= conn->pool_count){
+                    pthread_mutex_lock(&conn->mutex); // funções inline, melhor deixar lock
+                    __bcpy(conn->poll + count, conn->poll, conn->pool_count - count * sizeof(struct node*));
+                    conn->pool_count -= count;
+                    update_session_counter(conn->session);
+                    sort_poll_by_arrival_ptr(conn->poll, conn->count);
+                    pthread_mutex_unlock(&conn->mutex);
+                }
+                else
+                    conn->pool_count = 0;
+                conn->cursor = circle_buffer->iterate(cursor, head);
+            }
+        }
+        usleep(0x12); // TODO Isso precisa ser escalonado de acordo com a formula de tempo que um curso percorre o circle_buffer
+    }while(conn->run);
+    return_fail:
     return 0;
 }
 
-
-struct session_connection_pool *upsert_session(struct node_circle_buffer *cb, uint16_t port) {
-    struct session_connection_pool_hash *entry = &session_connection_pool_hash[port & 0x0FFF];
-    if(entry->pool) {
-        pthread_mutex_lock(&entry->pool->mutex);
-        *(entry->pool->poll + entry->pool->pool_size++) = *cb;
-        pthread_mutex_unlock(&entry->poolp->mutex);
-        return entry->pool;
-    }
-    else{
-        entry->pool = pool + session_count++;
-        entry->pool->port = port;
-        entry->pool->pool_size = 0;
-        entry->pool->poll = (struct node_circle_buffer*)calloc(0x400, sizeof(struct node_circle_buffer));
+int insert_session(struct node_circle_buffer *cb, union protocol_base_cb *session) {
+    if(!cb || !session)
+        return EOF;
+    struct session_connection_pool *entry = get_recno_slot();
+    if(entry){
+        // Allocate array of nodes instead of node_circle_buffer
+        entry->pool->poll = (struct node*)calloc(0x400, sizeof(struct node));
         if(!(entry->pool->poll))
-            return 0;
-        entry->pool->thread = 0;
-        pthread_mutex_init(&entry->pool->mutex, NULL);
+            return EOF;
+        entry->pool->pool_size = 0x400;
+        entry->pool->pool_count = 0;
+        __vcpy(&(entry->pool->session), session, sizeof(union protocol_base_cb));
+        entry->pool->run = !0;
         entry->pool->cursor = cb;
-        heapify_up(session_count - 1);
-        session_connection_pool_hash[port & 0x0FFF].port = port;
-        return entry->pool;
+        (void)pthread_create(&entry->pool->thread, 0, session_worker, entry->pool);
+        return 0;
     }
+    else
+        return EOF;
 }
-
-
-void stop_session_connection(uint16_t port) {
-    struct session_connection_pool_hash *entry = &session_connection_pool_hash[port & 0x0FFF];
-    if (entry->port != port || !(entry->pool))
-        return;
-
-    struct session_connection_pool *p = entry->pool;
-
-    // Cancelar e esperar a thread terminar, se ativa
-    if (p->thread) {
-        pthread_cancel(p->thread);
-        pthread_join(p->thread, 0);
-        p->thread = 0;
-    }
-
-    // Libera o poll se alocado
-    if (p->poll) {
-        free(p->poll);
-        p->poll = 0;
-    }
-
-    // Destroi o mutex
-    pthread_mutex_destroy(&p->mutex);
-
-    // Marca como removido no hash
-    entry->port = 0;
-    entry->pool = 0;
-
-    // Decrementa contador de sessões
-    --session_count;
-}
-
 
 int reload_session_conection(uint16_t port){
     return 0;
 }
 
-struct node_circle_buffer *get_session(uint16_t port) {
-    struct session_connection_pool_hash *entry = &session_connection_pool_hash[port & 0x0FFF];
+struct node *get_session(uint16_t port) {
+    struct session_connection_pool_recno *entry = &recno[port & 0x0FFF];
     if (entry->port != port || !(entry->pool))
         return 0;
-    return entry->pool->poll;
+    return entry->pool->poll;  // Now returns node array
 }
 
-unsigned get_session_size(uint16_t port) {
-    struct session_connection_pool_hash *entry = &session_connection_pool_hash[port & 0x0FFF];
-
-    if (entry->port != port || !(entry->pool))
-        return 0;
-
-    struct session_connection_pool *p = entry->pool, *p0 = p + entry->pool->pool_size;
-    unsigned total = 0;
-
-    do {
-        total += p->n.value_size;
-    } while(++p < p0);
-
-    return total;
-}
-
-void session_connection_trigger_send(struct session_connection *conn) {
-    if (!conn)
-        return;
+unsigned get_session_size(struct session_connection_pool *p) {
+    if(p){
+        struct node *p0->pool = p, *p1 = p0 + p->pool->pool_count;
+        unsigned total = 0;
+        do {
+            total += p->value_size;
+        } while(++p < p0);
+        return total;
+    }
     else
-        send_buffer(conn, get_session_size(conn->session_ptr->port));
+        return 0;
 }
 
+void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size)){
+    snd_cb = send_cb;
+}
+
+void stop_session_connection(struct session_connection_pool *p) {
+    if(p){
+        p->run = 0;
+        sleep(1);
+        if(p->poll)
+            free(p->poll);
+        memset(p, 0, sizeof(struct session_connection_pool_recno));
+    }
+}
+
+int start_session_connection(struct circle_buffer *__cb){
+    if(recno)
+        return EOF;
+    else{
+        recno = (struct session_connection_pool_recno*)calloc(0x400, sizeof(struct session_connection_pool_recno));
+        if(!recno)
+            return EOF;
+        session_connection_pool_recno_size = 0x400;
+        circle_buffer = __cb;
+        return 0;
+    }
+}

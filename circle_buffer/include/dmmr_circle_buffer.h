@@ -34,6 +34,7 @@ struct circle_buffer {
     pthread_t fifo_thread;
 
     void (*enqueue)(struct circle_buffer*, struct node_circle_buffer*);
+    void (*push)(struct circle_buffer*, struct node*)
     struct node_circle_buffer* (*get_current_node)(struct circle_buffer*);
     struct node_circle_buffer* (*iterate)(struct node_circle_buffer *cursor, struct circleq_head *head);
 };

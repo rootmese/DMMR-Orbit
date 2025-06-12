@@ -5,10 +5,10 @@ struct dmmr_socket{
 	void (*acception_cb)(struct node*); //populate circle buffer
 	void (*dispatcher_cb)(union protocol_base_cb*); // warm for consume create a new connection to send data
 	int (*start_acception)(proto_t, ezp_addr_type, uint16_t, const char*);
-	int (*stop_acception)(proto_t, ezp_addr_type, uint16_t, const char*);
+	int (*stop_acception)(proto_t, ezp_addr_type, uint16_t);
 	int (*start_dispatcher)(proto_t, ezp_addr_type, uint16_t, const char*);
-	void (*stop_dispatcher)(proto_t, ezp_addr_type, uint16_t, const char*);
-	int (*dispatcher)(union protocol_base_cb*);
+	void (*stop_dispatcher)(proto_t, ezp_addr_type, uint16_t);
+	int (*dispatcher)(union protocol_base_cb*, struct node*, unsigned);
 	void (*reload)(struct dmmr_scheduler*);
 };
 

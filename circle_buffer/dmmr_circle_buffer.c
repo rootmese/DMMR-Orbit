@@ -13,13 +13,13 @@ static void* fifo_worker(void* arg) {
             struct node_buffer* f = TAILQ_FIRST(this->fifo);
             if (n && f)
             {
-                __vcpy(n->value, f->n.value, MTU_SIZE);
+                __vcpy(n, f->n, sizeof(stuct node));
                 TAILQ_REMOVE(&(this->fifo), f, tailq);
             }
             pthread_mutex_unlock(&(this->fifo_lock));
         }
         usleep(0x12);
-    } while (~0);
+    } while (!0);
     return 0;
 }
 
@@ -53,7 +53,7 @@ do {
 
 
 
-struct node_circle_buffer* get_current_node(struct circle_buffer* this) {
+static struct node_circle_buffer* get_current_node(struct circle_buffer* this) {
     if(this){
         struct node_circle_buffer* current = this->cursor;
         this->cursor = CIRCLEQ_NEXT(current, circleq);
@@ -104,7 +104,6 @@ struct circle_buffer* new_circle_buffer(size_t size) {
     cb->iterate = iterate;
     cb->start = start;
     cb->stop = stop;
-
     return cb;
 }
 

@@ -4,11 +4,14 @@
 #include <dmmr_circle_buffer.h>
 
 struct session_connection_pool {
+    int run;
     uint16_t port;
     unsigned pool_size;
-    struct node_circle_buffer *poll;
+    unsigned pool_count;
+    struct node *poll;
     struct node_circle_buffer *cursor;
-    pthread_t *thread;
+    union protocol_base_cb session;
+    pthread_t thread;
     pthread_mutex_t mutex;
 };
 
@@ -18,7 +21,7 @@ void stop_session_conection(void);
 
 int reload_session_conection(uint16_t); //não será contemplado no MVC
 
-struct session_connection_pool *upsert_session(struct node_circle_buffer*, uint16_t);
+struct session_connection_pool *insert_session(struct node_circle_buffer*, union protocol_base_cb*);
 
 void delete_session(uint16_t);
 
@@ -27,6 +30,8 @@ struct node_circle_buffer *get_session(uint16_t);
 unsigned get_session_size(uint16_t);
 
 void session_connection_trigger_send(void *ptr);
+
+struct session_connection_pool *get_recno_slot(void);
 
 // TODO necessário criar tudo, como funcionará:
 // O Session Manager chama o upsert_session a sessão é criada ou inserida e fica consultando o método iterate do circle_buffer;

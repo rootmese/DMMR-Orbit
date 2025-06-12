@@ -10,4 +10,6 @@ struct dmmr_session_connection_manager{
 	void (*trigger_send)(struct dmmr_scheduler*, struct cfg_server_server*);
 };
 
+struct dmmr_session_connection_manager* new_session_connection_manager(struct circle_buffer*, struct dmmr_scheduler*, struct dmmr_socket*, struct cfg_server_server*);
+
 #endif
