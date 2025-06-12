@@ -200,25 +200,20 @@ static void* session_worker(void* arg) {
     return 0;
 }
 
-int insert_session(struct node_circle_buffer *cb, union protocol_base_cb *session) {
+int insert_session(struct node_circle_buffer *cb, struct session_connection_pool *session) {
     if(!cb || !session)
         return EOF;
-    struct session_connection_pool *entry = get_recno_slot();
-    if(entry){
-        // Allocate array of nodes instead of node_circle_buffer
-        entry->pool->poll = (struct node*)calloc(0x400, sizeof(struct node));
-        if(!(entry->pool->poll))
-            return EOF;
-        entry->pool->pool_size = 0x400;
-        entry->pool->pool_count = 0;
-        __vcpy(&(entry->pool->session), session, sizeof(union protocol_base_cb));
-        entry->pool->run = !0;
-        entry->pool->cursor = cb;
-        (void)pthread_create(&entry->pool->thread, 0, session_worker, entry->pool);
-        return 0;
-    }
-    else
+    struct session_connection_pool *entry = session;
+    // Allocate array of nodes instead of node_circle_buffer
+    entry->pool->poll = (struct node*)calloc(0x400, sizeof(struct node));
+    if(!(entry->pool->poll))
         return EOF;
+    entry->pool->pool_size = 0x400;
+    entry->pool->pool_count = 0;
+    entry->pool->run = !0;
+    entry->pool->cursor = CIRCLEQ_FIRST(&(cb->head));
+    (void)pthread_create(&entry->pool->thread, 0, session_worker, entry->pool);
+        return 0;
 }
 
 int reload_session_conection(uint16_t port){

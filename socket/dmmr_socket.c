@@ -6,7 +6,29 @@ static union protocol_base_cb *cap = 0;
 static unsigned cap_size = 0;
 static unsigned cap_count = 0;
 
+static struct circle_buffer* _cb = 0;
+static struct dmmr_scheduler* _sched = 0;
 static struct dmmr_socket *this = 0;
+
+
+static struct node_buffer *n_buffer = 0;
+static unsigned n_buffer_size = 0;
+static unsigned n_buffer_count = 0;
+
+struct node_buffer *get_struct_node_buffer(void) {
+    register struct node_buffer *p = n_buffer;
+    register struct node_buffer *p1 = n_buffer + n_buffer_size;
+    for (; p < p1; ++p)
+        if (!(p->run))
+            return p;
+    if(n_buffer_count >= n_buffer_size) {
+        n_buffer_size *= 2;
+        n_buffer = (struct node_buffer*)realloc(n_buffer, n_buffer_size * sizeof(struct node_buffer));
+        if(!n_buffer)
+            return 0;
+    }
+    return n_buffer + n_buffer_count++;
+}
 
 union protocol_base_cb *get_union_protocol_base_cb(void) {
     register union protocol_base_cb *p = cap;
@@ -21,6 +43,53 @@ union protocol_base_cb *get_union_protocol_base_cb(void) {
             return 0;
     }
     return cap + cap_count++;
+}
+
+static void on_receive_conection_cb(struct node *n){
+    if(n){
+        // TODO verifca lock
+        struct node_buffer *nb = get_struct_node_buffer();
+        __vcpy(&(nb->n), n, sizeof(struct node_buffer));
+        thread_mutex_lock(&(_cb->fifo_lock));
+        TAILQ_INSERT_TAIL(&(_cb->fifo), nb, tailq);
+        pthread_mutex_unlock(&_cb->fifo_lock);
+    }
+}
+
+static void on_acception_connection_udp_cb(struct udp_node *input){
+    int ret;
+    if(input){
+        struct session_connection_pool *p = get_recno_slot();
+        i(p){
+            __vcpy(&(p->session.tcp), input, sizeof(struct udp_node));
+            ret = connect_udp_server(&(p->session.udp), 0);
+            if(!ret){
+                ret = insert_session(_circle_buffer, p->session);
+                if(!ret){
+                    ret = _sched->insert(_sched, p);
+                    return 0;
+                }
+        }
+    }
+    return EOF;
+}
+
+static void on_acception_connection_tcp_cb(struct tcp_node *input){
+    int ret;
+    if(input){
+        struct session_connection_pool *p = get_recno_slot();
+        i(p){
+            __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
+            ret = connect_tcp_server(&(p->session.tcp), 0);
+            if(!ret){
+                ret = insert_session(_circle_buffer, p->session);
+                if(!ret){
+                    ret = _sched->insert(_sched, p);
+                    return 0;
+                }
+        }
+    }
+    return EOF;
 }
 
 static inline void dispatcher_udp(struct node *n, unsigned nl){
@@ -170,7 +239,7 @@ static int start_acception(proto_t proto, ezp_addr_type family, uint16_t port, c
 static void reload(struct cfg_server_server* __cfg_server){
 }
 
-struct dmmr_socket *new_dmmr_socket(struct cfg_server_server *cfg, void (*acception_cb)(struct node*), void (*acception_cb)(union protocol_base_cb*)){
+struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct cfg_server_server *cfg){
     if(this)
         return 0;
 	struct dmmr_socket *p = (struct dmmr_socket*)calloc(1, sizeof(struct dmmr_socket));
@@ -178,9 +247,10 @@ struct dmmr_socket *new_dmmr_socket(struct cfg_server_server *cfg, void (*accept
         cap = (union protocol_base_cb*)calloc(1, sizeof(union protocol_base_cb));
         if(cap){
             cap_size = 0x400;
-		    p->acception_cb  = acception_cb;
-		    p->dispatcher = dispatcher;
+	        p->acception_cb  = acception_cb;
+            p->dispatcher = dispatcher;
             p->start_acception = start_acception;
+            n_buffer = (struct node_buffer*)calloc(1, sizeof(struct node_buffer));
             this = p;
             (void)start_udp_socket();
             (void)start_tcp_socket();

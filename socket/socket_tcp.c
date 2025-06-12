@@ -180,8 +180,10 @@ int connect_tcp_server(struct tcp_node *tcp_node, const char *ip){
         ezp_addr_type n_ret;
         unsigned char ipaddr_buffer[sizeof(struct sockaddr_in6)];
         struct sockaddr_in server_addr;
-
-        n_ret = ezp_addr_type dns2ipaddr(ip, ipaddr_buffer);
+        if(ip)
+            n_ret = ezp_addr_type dns2ipaddr(ip, ipaddr_buffer);
+        else
+            n_ret = tcp_node->node.family;
         switch(n_ret){
             case EZP_IPV4:{
                 struct sockaddr_in *server_addr = (struct sockaddr_in*)ipaddr_buffer;

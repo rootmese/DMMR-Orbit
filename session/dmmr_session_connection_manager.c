@@ -18,24 +18,6 @@ static void session_manager_enqueue(struct circle_buffer *cb, struct node_circle
         // terá no circle_buffer um método chamado queue
 }
 
-static void trigger_send(struct dmmr_scheduler *sched, struct scheduler_connection *sched_conn){
-    if(sched && sched_conn){
-        struct node_circle_buffer *s = get_session(sched_conn->session_ptr->port);
-        if(s)
-            session_connection_trigger_send(sched_conn);
-    }
-}
-
-static void acception_connection_tcp_cb(struct tcp_node *input){
-    if(input){
-        struct session_connection_pool *p = get_recno_slot();
-        i(p){
-            __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
-            _sched->insert(_sched, p);
-        }
-    }
-}
-
 struct dmmr_session_connection_manager* new_session_connection_manager(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct dmmr_socket *sock, struct cfg_server_server *css) {
     if (!cb || !sched)
         return 0;
