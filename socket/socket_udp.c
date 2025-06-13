@@ -29,18 +29,24 @@ struct udp_node *get_udp_node(void) {
 static void* receiver_thread(void* arg) {
     struct udp_node *node = (struct udp_node*)arg;
     struct timespec ts_monotonic, ts_realtime;
-
+    union {
+        struct sockaddr_in ipv4;
+        struct sockaddr_in6 ipv6;
+    } client_addr_storage;
     do {
-        struct node *n = get_node();
+        struct node *n = node->node;
         struct iovec iov[1] = {
             { .iov_base = n->value, .iov_len = sizeof(n->value) }
         };
-
-        struct sockaddr_in client_addr;
-        socklen_t addr_len = sizeof(client_addr);
-
+        socklen_t addr_len;
+        if (node->node_cfg.family == AF_INET6) {
+            addr_len = sizeof(client_addr_storage.ipv6);
+        }
+        else {
+            addr_len = sizeof(client_addr_storage.ipv4);
+        }
         struct msghdr msg = {
-            .msg_name = &client_addr,
+            .msg_name = &client_addr_storage,
             .msg_namelen = addr_len,
             .msg_iov = iov,
             .msg_iovlen = 1,
@@ -48,68 +54,73 @@ static void* receiver_thread(void* arg) {
             .msg_controllen = 0,
             .msg_flags = 0
         };
-
-        n->fd = node->node->fd;
-        n->value_size = recvmsg(node->node->fd, &msg, 0);
-
+        n->value_size = recvmsg(node->node_cfg.fd, &msg, 0);
         if (n->value_size <= 0) {
             if (node->run && n->value_size < 0)
                 continue;
             else
                 break;
         }
-
+        n->fd = node->node_cfg.fd;
         n->proto = proto_t.proto_udp_t;
-        n->port = ntohs(client_addr.sin_port);
-        n->sin_addr = client_addr.sin_addr.s_addr;
-
+        if (node->node_cfg.family == AF_INET) {
+            n->port = ntohs(client_addr_storage.ipv4.sin_port);
+            __vcpy(&(n->ipv4), &(client_addr_storage.ipv4.sin_addr), sizeof(struct in_addr));
+        }
+        else {
+            n->port = ntohs(client_addr_storage.ipv6.sin6_port);
+            __vcpy(&(n->ipv6), &(client_addr_storage.ipv6.sin6_addr), sizeof(struct in6_addr));
+        }
         clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
         n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
-
         clock_gettime(CLOCK_REALTIME, &ts_realtime);
         n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
-
         if (node->on_receive_cb)
             node->on_receive_cb(n);
-
     } while (node->run);
     return 0;
 }
 
 
-ssize_t udp_send_to_client(struct node *n, size_t n_len) {
+
+int udp_send_to_client(struct node *n, size_t n_len) {
     if (!n || n_len == 0)
         return EOF;
-
-    struct sockaddr_in dest_addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(n->port),
-        .sin_addr = { .s_addr = n->sin_addr }
-    };
-
     struct node *n0 = n, *n1 = n0 + n_len;
     do {
         struct iovec iov[1] = {
             { .iov_base = n0->value, .iov_len = n0->value_size }
         };
-
-        struct msghdr msg = {
-            .msg_name = &dest_addr,
-            .msg_namelen = sizeof(dest_addr),
-            .msg_iov = iov,
-            .msg_iovlen = 1,
-            .msg_control = 0,
-            .msg_controllen = 0,
-            .msg_flags = 0
-        };
-
-        if (sendmsg(n0->fd, &msg, 0) < 0)
+        union {
+            struct sockaddr_in ipv4;
+            struct sockaddr_in6 ipv6;
+        } dest_addr_storage;
+        struct msghdr msg;
+        memset(&msg, 0, sizeof(msg));
+        if (n0->family == AF_INET) {
+            dest_addr_storage.ipv4.sin_family = AF_INET;
+            dest_addr_storage.ipv4.sin_port = htons(n0->port);
+            dest_addr_storage.ipv4.sin_addr = n0->ipv4;
+            msg.msg_name = &dest_addr_storage.ipv4;
+            msg.msg_namelen = sizeof(dest_addr_storage.ipv4);
+        }
+        else if (n0->family == AF_INET6) {
+            dest_addr_storage.ipv6.sin6_family = AF_INET6;
+            dest_addr_storage.ipv6.sin6_port = htons(n0->port);
+            dest_addr_storage.ipv6.sin6_addr = n0->ipv6;
+            msg.msg_name = &dest_addr_storage.ipv6;
+            msg.msg_namelen = sizeof(dest_addr_storage.ipv6);
+        }
+        else
             return EOF;
-
+        msg.msg_iov = iov;
+        msg.msg_iovlen = 1;
+        (void)sendmsg(n0->fd, &msg, 0);
     } while (++n0 < n1);
 
     return 0;
 }
+
 
 int udp_server_is_active(void){
     return (udp_pool) ? (!0) : (0);
@@ -118,27 +129,55 @@ int udp_server_is_active(void){
 int start_udp_service(struct udp_node *udp_node) 
 {
     struct udp_node *node = udp_node;
-    if (!node)
-        return EOF;
-    node->on_receive_cb = on_receive_cb;
-    node->run = !0;
-    if((node->node->fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket creation failed");
-        return EOF;
+    if (node){
+        înt ret;
+        node->on_receive_cb = on_receive_cb;
+        node->run = !0;
+        sock = node->node_cfg.fd = socket(AF_INET, SOCK_DGRAM, 0));
+        if(sock == EOF)
+            goto return_error;
+        switch(node->node_cfg.family){
+            case AF_INET:{
+                ret = bind(node->node_cfg.fd, (struct sockaddr*)&(node->node_cfg.ipv4), sizeof(server_addr));
+                if(ret)
+                    goto return_socket_error;
+            }
+                break;
+            case AF_INET6:{
+                ret = bind(node->node_cfg.fd, (struct sockaddr_in6*)&(node->node_cfg.ipv6), sizeof(server_addr));
+                if(ret)
+                    goto return_socket_error;
+            }
+                break;
+        }
+        struct node *n = get_node();
+        if(n){
+         n->fd = client_fd;
+        if (node->node_cfg.family == AF_INET) {
+            n->port = ntohs(client_addr.sin_port);
+            __vcpy(&(n->ipv4), &(client_addr.sin_addr), sizeof(struct in_addr));
+        }
+        else {
+            struct sockaddr_in6 *a = &client_addr_v6;
+            n->port = ntohs(a->sin6_port);
+            __vcpy(&(n->ipv6), &(a->sin6_addr), sizeof(struct in6_addr));
+        }
+        n->run = !0;
+        struct tcp_node *tn = get_tcp_node();
+        if(tn){
+            tn->node = n;
+            tn->node_count++;
+            tn->on_dispatch_cb = node->on_dispatch_cb;
+            (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
+            if(node->on_accept_cb)
+                node->on_accept_cb(tn);
+        }
+        return 0;
     }
-
-    if(bind(node->node->fd, (struct sockaddr*)&server_addr, sizeof(server_addr))) {
-        perror("bind failed");
-        close(node->node->fd);
+    return_close_socket_error:
+        close(sockfd);
+    return_error:
         return EOF;
-    }
-
-    if(pthread_create(&node->receiver_thread, 0, receiver_thread, node)) {
-        perror("receiver thread creation failed");
-        close(node->node->fd);
-        return EOF;
-    }
-    return 0;
 }
 
 void disconnect_udp_service(struct udp_node *node){

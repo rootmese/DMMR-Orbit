@@ -141,6 +141,11 @@ static int start(struct dmmr_scheduler *this){
         if(!slots)
             return EOF;
         scheduler_connection_size = 0x400;
+        pthread_attr_init(&attr);
+        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);  // Escalonador em tempo real
+        param.sched_priority = 80;  // Prioridade entre 1 e 255 (quanto maior, mais prioridade)
+        pthread_attr_setschedparam(&attr, &param);
+        pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
         pthread_mutex_init(&slots_mutex, 0);
         pthread_create(&this->worker_thread, 0, _reorder, this);
         return 0;

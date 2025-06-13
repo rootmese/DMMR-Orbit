@@ -18,7 +18,24 @@ static void* fifo_worker(void* arg) {
             }
             pthread_mutex_unlock(&(this->fifo_lock));
         }
-        usleep(0x12);
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (timespec_less(&now, &next_sleep)) {
+            struct timespec remaining = {
+                .tv_sec = next_sleep.tv_sec - now.tv_sec,
+                .tv_nsec = next_sleep.tv_nsec - now.tv_nsec
+            };
+            if (remaining.tv_nsec < 0) {
+                remaining.tv_sec--;
+                remaining.tv_nsec += 1000000000;
+            }
+            if (remaining.tv_sec > 0 || remaining.tv_nsec > 18) {
+                nanosleep(&remaining, NULL);
+            }
+        } else {
+            next_sleep.tv_sec = 0;
+            next_sleep.tv_nsec = 0;
+        }
     } while (!0);
     return 0;
 }
@@ -67,6 +84,11 @@ static struct node_circle_buffer* get_current_node(struct circle_buffer* this) {
 
 int start(struct circle_buffer *this){
     if(this){
+        pthread_attr_init(&attr);
+        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);  // Escalonador em tempo real
+        param.sched_priority = 80;  // Prioridade entre 1 e 255 (quanto maior, mais prioridade)
+        pthread_attr_setschedparam(&attr, &param);
+        pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
         pthread_mutex_init(&this->fifo_lock, 0);
         pthread_create(&(this->fifo_thread), 0, fifo_worker, this);
         return 0;
@@ -91,13 +113,18 @@ struct circle_buffer* new_circle_buffer(size_t size) {
     }
     CIRCLEQ_INIT(&(cb->head));
     TAILQ_INIT(&(cb->fifo)); 
+    struct node_circle_buffer *prev = 0;
     node_circle_buffer *p = buffer, *p1 = p + cb->buffer_size;
     do
     {
         CIRCLEQ_INSERT_TAIL(&(cb->head), p, circleq);
+        if (prev)
+            item->prev_ptr = prev;
+        prev = item;
     } while (++p < p1);
 
     cb->cursor = CIRCLEQ_EMPTY(&cb->head) ? 0 : CIRCLEQ_FIRST(&cb->head);
+    CIRCLEQ_FIRST(&cb->head)->prev_ptr = CIRCLEQ_LAST(&cb->head);
 
     cb->enqueue = enqueue;
     cb->get_current_node = get_current_node;

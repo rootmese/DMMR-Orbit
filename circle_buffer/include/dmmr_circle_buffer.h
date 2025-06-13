@@ -18,6 +18,7 @@ struct node_buffer {
 struct node_circle_buffer {
     struct node n;
     CIRCLEQ_ENTRY(node_circle_buffer) circleq;
+    struct node_circle_buffer* prev_ptr;
 };
 
 

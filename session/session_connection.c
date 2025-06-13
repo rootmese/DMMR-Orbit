@@ -21,6 +21,10 @@ struct session_connection_pool_recno{
 
 static struct session_connection_pool_recno *recno = 0;
 
+static inline int is_cursor_safe(struct circle_buffer *cb, struct node_circle_buffer *cur) {
+    return (!(cur == cb->cursor));
+}
+
 struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
     register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
@@ -149,56 +153,83 @@ static struct node heap_pop_min(struct node *base, size_t *size) {
     return min;
 }
 
+static inline void process_session_node(struct session_connection_pool *conn) {
+    if (!(node_cmp(conn->cursor, get_session_node(conn->session)))) {
+        (conn->poll + conn->pool_count) = conn->cursor->n;
+        conn->pool_count++;
+
+        unsigned size = get_session_size(conn);
+        if (size >= 9000 && conn->pool_size > 0) {
+            unsigned count = 0, siz = 0;
+            struct node *n = conn->poll, *n0 = n + conn->pool_count;
+            do {
+                siz += n->value_size;
+                ++count;
+            } while (siz <= 9000 && ++n < n0);
+
+            if (snd_cb)
+                snd_cb(conn->session, conn->poll, count);
+
+            if (count <= conn->pool_count) {
+                pthread_mutex_lock(&conn->mutex);
+                __bcpy(conn->poll + count, conn->poll, (conn->pool_count - count) * sizeof(struct node));
+                conn->pool_count -= count;
+                update_session_counter(conn->session);
+                sort_poll_by_arrival_ptr(conn->poll, conn->pool_count);
+                pthread_mutex_unlock(&conn->mutex);
+            } else {
+                conn->pool_count = 0;
+            }
+        }
+    }
+}
+
+
 // Changed poll handling to use node instead of node_circle_buffer
 static void* session_worker(void* arg) {
     struct session_connection_pool* conn = (struct session_connection_pool*)arg;
     if (!conn || !conn->poll || !circle_buffer)
         return 0;
-    struct node_circle_buffer *cursor = conn->cursor;
+
     struct circleq_head *head = &circle_buffer->head;
+
     do {
-        if(conn->pool_count + 1 > conn->pool_size){
-            pthread_mutex_lock(&conn->mutex); // pouco entrará aqui, garantia
+        // Expande pool se necessário
+        if (conn->pool_count + 1 > conn->pool_size) {
+            pthread_mutex_lock(&conn->mutex);
             conn->pool_size *= 2;
-            conn->poll = (struct node*)realloc(conn->poll,conn->pool_size * sizeof(struct node));
-            if(!(conn->poll)){
+            conn->poll = (struct node*)realloc(conn->poll, conn->pool_size * sizeof(struct node));
+            if (!(conn->poll)) {
                 pthread_mutex_unlock(&conn->mutex);
                 goto return_fail;
             }
             pthread_mutex_unlock(&conn->mutex);
         }
-        if(!(node_cmp(conn->cursor, get_session_node(conn->session)))){
-            (conn->poll + conn->pool_count) = conn->cursor->n;
-            conn->pool_count++;
-            unsigned size = get_session_size(conn);
-            if (size >= 9000 && conn->pool_size > 0) {
-                unsigned count = 0;
-                unsigned siz = 0;
-                struct node *n = conn->poll, *n0 = n + conn->pool_count;
-                do{
-                    siz += n->value_size;
-                    ++count;
-                }while(siz <= 9000 && ++n < n0);
-                if(snd_cb)
-                    snd_cb(conn->session, conn->pool, count);
-                if(count <= conn->pool_count){
-                    pthread_mutex_lock(&conn->mutex); // funções inline, melhor deixar lock
-                    __bcpy(conn->poll + count, conn->poll, conn->pool_count - count * sizeof(struct node*));
-                    conn->pool_count -= count;
-                    update_session_counter(conn->session);
-                    sort_poll_by_arrival_ptr(conn->poll, conn->count);
-                    pthread_mutex_unlock(&conn->mutex);
-                }
-                else
-                    conn->pool_count = 0;
-                conn->cursor = circle_buffer->iterate(cursor, head);
-            }
+
+        // Processa o dado na posição atual, se válido
+        process_session_node(conn);
+
+        // Aguarda se ainda não é seguro avançar
+        if (!is_cursor_safe(circle_buffer, conn->cursor)) {
+            usleep(10);
+            continue;
         }
-        usleep(0x12); // TODO Isso precisa ser escalonado de acordo com a formula de tempo que um curso percorre o circle_buffer
-    }while(conn->run);
-    return_fail:
+
+        while (conn->cursor != circle_buffer->cursor->prev_ptr) {
+            process_session_node(conn);  // aproveita para processar se for dele
+            conn->cursor = circle_buffer->iterate(conn->cursor, head);
+        }
+
+        // Avança para manter a esteira andando
+        conn->cursor = circle_buffer->iterate(conn->cursor, head);
+
+        usleep(0x12); // pode ser ajustado por fórmula
+    } while (conn->run);
+
+return_fail:
     return 0;
 }
+
 
 int insert_session(struct node_circle_buffer *cb, struct session_connection_pool *session) {
     if(!cb || !session)

@@ -48,7 +48,7 @@
 #endif
 
 typedef enum{
-    proto_none_t = 0x00,
+    proto_none_t   = 0x00,
     proto_udp_t    = 0x01,
     proto_tcp_t    = 0x02,
 }proto_t;
@@ -57,21 +57,25 @@ typedef enum {
     EZP_DNS     = 0,
     EZP_IPV4    = AF_INET,
     EZP_IPV6    = AF_INET6,
-    EZP_INVALID = ~0
+    EZP_INVALID = 0xFFFF
 } ezp_addr_type;
 
 struct node {
-    ezp_addr_type family;
-    uint16_t port;
-    int fd;
-	struct sockaddr ipv4;
-    struct sockaddr_in6 ipv6;
-    unsigned value_size;
-    unsigned char value[1500];
     uint64_t arrival;
     uint64_t deadline;
+    struct sockaddr_in6 ipv6;
+    struct sockaddr ipv4;
+    int fd;
+    uint32_t __filler0;
+    ezp_addr_type family;
+    uint16_t port;
+    uint16_t value_size;
+    uint16_t __filler1;
     uint8_t flags;
+    uint8_t __filler2[7];
+    uint8_t value[1500];
 };
+
 
 struct none_node{
     proto_t proto;
@@ -79,23 +83,30 @@ struct none_node{
 
 struct tcp_node {
     proto_t proto;
-    unsigned node_count;
+    uint8_t run
+    uint8_t __filler0[3];
+    uint32_t node_count;
+    uint32_t __filler1;
     struct node *node;
-    uint8_t run;
+    struct node node_cfg;
     pthread_t accept_thread;
+    struct tcp_node *parent;
     void (*on_accept_cb)(struct node*);
-    void (*on_dispatch_cb)(struct node*)
+    void (*on_dispatch_cb)(struct node*);
 };
 
 struct udp_node {
     proto_t proto;
-    unsigned node_count;
-    struct node node;
     uint8_t run;
+    uint8_t __filler0[3];
+    uint32_t node_count;
+    uint32_t __filler1;
+    struct node *node;
+    struct node node_cfg;
     pthread_t accept_thread;
     void (*on_accept_cb)(struct node*);
-    void (*on_dispatch_cb)(struct node*)
-};
+    void (*on_dispatch_cb)(struct node*);
+};   
 
 union protocol_base_cb{
     struct none_node none;
