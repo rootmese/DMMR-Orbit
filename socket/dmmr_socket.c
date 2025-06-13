@@ -61,7 +61,7 @@ static void on_acception_connection_udp_cb(struct udp_node *input){
     if(input){
         struct session_connection_pool *p = get_recno_slot();
         i(p){
-            __vcpy(&(p->session.tcp), input, sizeof(struct udp_node));
+            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
             ret = connect_udp_server(&(p->session.udp), 0);
             if(!ret){
                 ret = insert_session(_circle_buffer, p->session);
@@ -93,7 +93,7 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input){
 }
 
 static inline void dispatcher_udp(struct node *n, unsigned nl){
-    if(u && nl)
+    if(n && nl)
         (void)udp_send_to_client(n, nl);
 }
 
@@ -102,7 +102,7 @@ static inline void dispatcher_tcp(struct node *n, unsigned nl){
         (void)tcp_send_to_client(n, nl);
 }
 
-static void dispatcher(protocol_base_cb *u, struct node *n, unsigned nl){
+static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
     if(node){
         switch(u->none.proto){
             case proto_udp_t:

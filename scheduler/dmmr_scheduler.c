@@ -98,7 +98,7 @@ static void trigger_send(scheduler_connection* conn) {
     do{
         ++count;
     }while(++n0 < n1);
-    this->sock->dispatcher(&(pool->session), n, count);
+    this->sock->dispatcher(&(pool->session), pool->poll, count);
     pthread_mutex_lock(&pool->mutex);
     pool->pool_count = 0;
     memset(pool->pool, 0, pool->pool_size * sizeof(struct node));
@@ -119,17 +119,19 @@ static void send(scheduler_connection* conn, struct node *n, unsigned s) {
     if (!pool || !u)
         return;
 
-    siz = ((pool->pool_size < 6) ? (pool->pool_size) : (6));
-    struct node *n0 = pool->pool, *n1 = n0 + siz;
+    siz = ((pool->pool_size <= 6) ? (pool->pool_size) : (6));
+    struct node *n0 = n, *n1 = n0 + siz;
     do{
         this->sock->dispatcher(u, n0, s);
     }while(++n0 < n1);
-    pthread_mutex_lock(&slots_mutex);
-    __bcpy(pool + siz, pool, (scheduler_connection_count - siz - 1)); 
-    conn->last_active_time_us = n0->arrival;
-    conn->realtime_deadline_us = n0->deadline;
-    conn->deadline_us = n0->deadline;
-    pthread_mutex_unlock(&slots_mutex); //TODO tocar o mute para cada sessão ter seu mutex
+    pthread_mutex_lock(&(pool->mutex));
+    __bcpy(n + siz, n, (pool->pool_size - siz) * sizeof(struct node));
+    conn->last_active_time_us = n->arrival;
+    conn->realtime_deadline_us = n->deadline;
+    conn->deadline_us = n->deadline;
+    pool->pool_count -= siz;
+    pool->pool_size -= siz;
+    pthread_mutex_unlock(&(pool->mutex));
 }
 
 static void reload(struct cfg_server_server* __cfg_server){
@@ -137,6 +139,8 @@ static void reload(struct cfg_server_server* __cfg_server){
 
 static int start(struct dmmr_scheduler *this){
     if(this){
+        pthread_attr_t attr;
+        struct sched_param param;
         slots = (struct scheduler_connection*)calloc(0x400, sizeof(struct scheduler_connection));
         if(!slots)
             return EOF;

@@ -157,7 +157,6 @@ static inline void process_session_node(struct session_connection_pool *conn) {
     if (!(node_cmp(conn->cursor, get_session_node(conn->session)))) {
         (conn->poll + conn->pool_count) = conn->cursor->n;
         conn->pool_count++;
-
         unsigned size = get_session_size(conn);
         if (size >= 9000 && conn->pool_size > 0) {
             unsigned count = 0, siz = 0;
@@ -166,10 +165,8 @@ static inline void process_session_node(struct session_connection_pool *conn) {
                 siz += n->value_size;
                 ++count;
             } while (siz <= 9000 && ++n < n0);
-
             if (snd_cb)
                 snd_cb(conn->session, conn->poll, count);
-
             if (count <= conn->pool_count) {
                 pthread_mutex_lock(&conn->mutex);
                 __bcpy(conn->poll + count, conn->poll, (conn->pool_count - count) * sizeof(struct node));
@@ -177,24 +174,19 @@ static inline void process_session_node(struct session_connection_pool *conn) {
                 update_session_counter(conn->session);
                 sort_poll_by_arrival_ptr(conn->poll, conn->pool_count);
                 pthread_mutex_unlock(&conn->mutex);
-            } else {
-                conn->pool_count = 0;
             }
+            else
+                conn->pool_count = 0;
         }
     }
 }
 
-
-// Changed poll handling to use node instead of node_circle_buffer
 static void* session_worker(void* arg) {
     struct session_connection_pool* conn = (struct session_connection_pool*)arg;
     if (!conn || !conn->poll || !circle_buffer)
         return 0;
-
     struct circleq_head *head = &circle_buffer->head;
-
     do {
-        // Expande pool se necessário
         if (conn->pool_count + 1 > conn->pool_size) {
             pthread_mutex_lock(&conn->mutex);
             conn->pool_size *= 2;
@@ -205,24 +197,16 @@ static void* session_worker(void* arg) {
             }
             pthread_mutex_unlock(&conn->mutex);
         }
-
-        // Processa o dado na posição atual, se válido
         process_session_node(conn);
-
-        // Aguarda se ainda não é seguro avançar
         if (!is_cursor_safe(circle_buffer, conn->cursor)) {
             usleep(10);
             continue;
         }
-
         while (conn->cursor != circle_buffer->cursor->prev_ptr) {
-            process_session_node(conn);  // aproveita para processar se for dele
+            process_session_node(conn);
             conn->cursor = circle_buffer->iterate(conn->cursor, head);
         }
-
-        // Avança para manter a esteira andando
         conn->cursor = circle_buffer->iterate(conn->cursor, head);
-
         usleep(0x12); // pode ser ajustado por fórmula
     } while (conn->run);
 
@@ -242,7 +226,7 @@ int insert_session(struct node_circle_buffer *cb, struct session_connection_pool
     entry->pool->pool_size = 0x400;
     entry->pool->pool_count = 0;
     entry->pool->run = !0;
-    entry->pool->cursor = CIRCLEQ_FIRST(&(cb->head));
+    entry->pool->cursor = get_current_node();
     (void)pthread_create(&entry->pool->thread, 0, session_worker, entry->pool);
         return 0;
 }

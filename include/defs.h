@@ -83,7 +83,7 @@ struct none_node{
 
 struct tcp_node {
     proto_t proto;
-    uint8_t run
+    uint8_t run;
     uint8_t __filler0[3];
     uint32_t node_count;
     uint32_t __filler1;

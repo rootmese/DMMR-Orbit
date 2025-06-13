@@ -1,14 +1,10 @@
 #ifndef __CIRCLE_BUFFER_H__
 #define __CIRCLE_BUFFER_H__
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/queue.h>
-
 #include <defs.h>
+
+TAILQ_HEAD(tailq_fifo, node_buffer);
+CIRCLEQ_HEAD(circleq_head, node_circle_buffer);
 
 struct node_buffer {
     struct node n;
@@ -24,7 +20,6 @@ struct node_circle_buffer {
 
 
 struct circle_buffer {
-    
     struct node_circle_buffer* cursor;
     struct circleq_head head;
     struct tailq_fifo fifo;
@@ -34,9 +29,9 @@ struct circle_buffer {
     pthread_mutex_t fifo_lock;
     pthread_t fifo_thread;
 
-    void (*enqueue)(struct circle_buffer*, struct node_circle_buffer*);
-    void (*push)(struct circle_buffer*, struct node*)
-    struct node_circle_buffer* (*get_current_node)(struct circle_buffer*);
+    int (*start)(void);
+    void  (*stop)(void);
+    struct node_circle_buffer* (*get_current_node)(void);
     struct node_circle_buffer* (*iterate)(struct node_circle_buffer *cursor, struct circleq_head *head);
 };
 
