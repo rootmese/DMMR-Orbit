@@ -1,7 +1,7 @@
 #ifndef __SESSION_CONNECTION_H__
 #define __SESSION_CONNECTION_H__
 
-#include <dmmr_circle_buffer.h>
+#include <defs.h>
 
 struct session_connection_pool {
     int run;
@@ -17,11 +17,11 @@ struct session_connection_pool {
 
 int start_session_connection(struct circle_buffer*, uint16_t);// o segundo parâmetro é o número de portas que o sistemas estará escutando para já fazer o buffer
 
-void stop_session_conection(void);
+void stop_session_connection(struct session_connection_pool*);
 
 int reload_session_conection(uint16_t); //não será contemplado no MVC
 
-struct session_connection_pool *insert_session(struct node_circle_buffer*, union protocol_base_cb*);
+int insert_session(struct node_circle_buffer*, struct session_connection_pool*);
 
 void delete_session(uint16_t);
 

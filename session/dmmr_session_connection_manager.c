@@ -8,6 +8,9 @@ static struct dmmr_scheduler* _sched = 0;
 static struct dmmr_socket *_sock = 0;
 static struct dmmr_session_connection_manager _this = 0;
 
+static void (*on_accept_cb)(struct node*) = 0;
+static void (*on_dispatch_cb)(struct node*) = 0;
+
 // Prototipa a função que vai sobrepor o enqueue
 static void session_manager_enqueue(struct circle_buffer *cb, struct node_circle_buffer* n){
     struct session_connection_pool *pool;
@@ -19,46 +22,38 @@ static void session_manager_enqueue(struct circle_buffer *cb, struct node_circle
         // terá no circle_buffer um método chamado queue
 }
 
-static int listen(proto_t proto, uint16_t port, const char *host){
-    if(host){
-        int ret;
-        char ip[sizeof(struct sockaddr_in6)];
-        ezp_addr_type family =  dns2ipaddr(host, ip);
+static int accept(const char *conn_str){
+    if(conn_str){
+        uint16_t port;
+        char host_buf[0x100];
+        proto_t proto = parse_protocol_host_port(conn_str, host_buf, sizeof(host_buf), &port);
         switch(proto){
-            case proto_udp_t:{
-                union protocol_base_cb *u = get_union_protocol_base_cb();
-                if(u){
-                    struct udp_node *udp = &(u.udp);
-                    if(udp){
-                        udp->proto = proto;
-                        switch(family){
-                            case AF_INET:
-                                ret = inet_pton(AF_INET, ip_str, &(udp->node.cfg.ipv4));
-                                if(!ret){
-                                    udp->node.cfg.family = family;
-                                    udp->node.cfg.port = port;
-                                    return start_udp_service(udp);
-                                }
-                                break;
-                            case AF_INET6:
-                                ret = inet_pton(AF_INET6, ip_str, &(udp->node.cfg.ipv6));
-                                if(!ret){
-                                    udp->node.cfg.family = family;
-                                    udp->node.cfg.port = port;
-                                    return start_udp_service(udp);
-                                }
-                                break;
-                             default:
-                                return EOF;
-                        }
-                        
-                    }
-                }
-            }
-            break;
+            case proto_none_t:
+                return EOF;
+                break; /* Stupid break */
+            case proto_udp_t:
+            case proto_tcp_t:
+                return start_acception(proto, port, const char* ip);
+                break;
         }
-        int start_tcp_service(struct tcp_node *node)
     }
+    return EOF;
+}
+
+static int connect(const char *conn_str){
+
+}
+
+static void set_receiver_cb(){
+
+}
+
+static void set_accept_cb(){
+
+}
+
+static int load_plugin(struct dmmr_plugin *plugin){
+
 }
 
 struct dmmr_session_connection_manager* new_session_connection_manager(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct dmmr_socket *sock, struct cfg_server_server *css) {
@@ -68,8 +63,6 @@ struct dmmr_session_connection_manager* new_session_connection_manager(struct ci
     if (!mgr)
         return 0;
     mgr->reload = 0;
-    cb->enqueue = session_manager_enqueue;
-    sched->trigger_send = trigger_send;
     _circle_buffer = cb;
     _sched = sched;
     _sock = sock;

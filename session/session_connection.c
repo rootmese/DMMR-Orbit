@@ -1,10 +1,5 @@
 #include <session_connection.h>
-#include <dmmr_circle_buffer.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
+
 
 static struct circle_buffer *circle_buffer = 0;
 
@@ -12,14 +7,14 @@ static unsigned session_connection_pool_recno_count = 0;
 
 static unsigned session_connection_pool_recno_size = 0;
 
+static struct session_connection_pool_recno *recno = 0;
+
 static void (*snd_cb)(union protocol_base_cb *session, struct node*, unsigned size) = 0;
 
 struct session_connection_pool_recno{
     uint16_t port;
     struct session_connection_pool *pool;
 };
-
-static struct session_connection_pool_recno *recno = 0;
 
 static inline int is_cursor_safe(struct circle_buffer *cb, struct node_circle_buffer *cur) {
     return (!(cur == cb->cursor));
@@ -31,13 +26,13 @@ struct session_connection_pool *get_recno_slot(void) {
     for (; p < p1; ++p)
         if (!(p->run))
             return p;
-    if (session_connection_pool_recno_count >= udp_pool_size) {
-        session_connection_pool_recno_size * 2;
-        udp_pool = (struct udp_node*)realloc(udp_pool, udp_pool_size * sizeof(struct udp_node));
-        if (!udp_pool)
+    if (session_connection_pool_recno_count >= session_connection_pool_recno_size) {
+        session_connection_pool_recno_size *= 2;
+        recno = (struct udp_node*)realloc(recno, session_connection_pool_recno_size * sizeof(struct session_connection_pool_recno));
+        if (!recno)
             return 0;
     }
-    return udp_pool + udp_pool_count++;
+    return recno + session_connection_pool_recno_count++;
 }
 
 // Changed parameter types from node_circle_buffer to node
@@ -221,7 +216,7 @@ int insert_session(struct node_circle_buffer *cb, struct session_connection_pool
     struct session_connection_pool *entry = session;
     // Allocate array of nodes instead of node_circle_buffer
     entry->pool->poll = (struct node*)calloc(0x400, sizeof(struct node));
-    if(!(entry->pool->poll))
+    if(!(entry->pool))
         return EOF;
     entry->pool->pool_size = 0x400;
     entry->pool->pool_count = 0;
@@ -235,20 +230,13 @@ int reload_session_conection(uint16_t port){
     return 0;
 }
 
-struct node *get_session(uint16_t port) {
-    struct session_connection_pool_recno *entry = &recno[port & 0x0FFF];
-    if (entry->port != port || !(entry->pool))
-        return 0;
-    return entry->pool->poll;  // Now returns node array
-}
-
 unsigned get_session_size(struct session_connection_pool *p) {
     if(p){
-        struct node *p0->pool = p, *p1 = p0 + p->pool->pool_count;
+        struct node *n = p->pool, *n1 = n + p->pool_count;
         unsigned total = 0;
         do {
-            total += p->value_size;
-        } while(++p < p0);
+            total += n->value_size;
+        } while(++n < n1);
         return total;
     }
     else
@@ -265,7 +253,8 @@ void stop_session_connection(struct session_connection_pool *p) {
         sleep(1);
         if(p->poll)
             free(p->poll);
-        memset(p, 0, sizeof(struct session_connection_pool_recno));
+        pthread_mutex_destroy(&(p->mutex));
+        memset(p, 0, sizeof(struct session_connection_pool));
     }
 }
 

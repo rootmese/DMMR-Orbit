@@ -1,13 +1,10 @@
 #include <dmmr_server.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
+
 
 extern FILE* yyin;
 int yylex(void);
+
+static struct dmmr_server *this;
 
 
 static void server_handle_token(struct dmmr_parser* parser, const char* type, const char* value) {
@@ -146,8 +143,9 @@ struct dmmr_server* new_dmmr_server(struct cfg_daemon_server *__daemon_cfg) {
     memcpy(&srv->cfg_daemon, __daemon_cfg, sizeof(struct cfg_daemon_server));
 
     // Inicializar componentes
-    srv->cb = new_circle_buffer(10); // Exemplo: buffer size 10
+    srv->cb = new_circle_buffer(10);
     srv->parser = new_dmmr_parser();
+    struct dmmr_scheduler*
     
     // Configurar o parser
     if (srv->parser) {

@@ -161,17 +161,13 @@ static int start_dispatcher(proto_t proto, ezp_addr_type family, uint16_t port, 
         case proto_udp_t:
             break;
         case proto_tcp_t:
-        }
             break;
         }
-        case proto_none_udp:
-        default:
-            break;
     }
     return 0;
 }
 
-static int start_acception(proto_t proto, ezp_addr_type family, uint16_t port, const char* ip) {
+static int start_acception(proto_t proto, uint16_t port, const char* ip) {
     int ret;
     union protocol_base_cb *cb;
 
