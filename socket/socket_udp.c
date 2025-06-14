@@ -167,7 +167,7 @@ int start_udp_service(struct udp_node *udp_node)
         if(tn){
             tn->node = n;
             tn->node_count++;
-            tn->on_dispatch_cb = node->on_dispatch_cb;
+            tn->on_receive_cb = node->on_receive_cb;
             (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
             if(node->on_accept_cb)
                 node->on_accept_cb(tn);

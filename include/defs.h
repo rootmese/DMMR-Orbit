@@ -69,8 +69,7 @@ struct node {
     uint32_t __filler0;
     ezp_addr_type family;
     uint16_t port;
-    uint16_t value_size;
-    uint16_t __filler1;
+    uint32_t value_size;
     uint8_t flags;
     uint8_t __filler2[7];
     uint8_t value[1500];
@@ -91,8 +90,8 @@ struct tcp_node {
     struct node node_cfg;
     pthread_t accept_thread;
     struct tcp_node *parent;
-    void (*on_accept_cb)(struct node*);
-    void (*on_dispatch_cb)(struct node*);
+    void (*on_accept_cb)(struct tcp_node*);
+    void (*on_receive_cb)(struct node*);
 };
 
 struct udp_node {
@@ -104,8 +103,8 @@ struct udp_node {
     struct node *node;
     struct node node_cfg;
     pthread_t accept_thread;
-    void (*on_accept_cb)(struct node*);
-    void (*on_dispatch_cb)(struct node*);
+    void (*on_accept_cb)(struct udp_node*);
+    void (*on_receive_cb)(struct node*);
 };   
 
 union protocol_base_cb{

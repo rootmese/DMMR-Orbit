@@ -80,8 +80,8 @@ static void* tcp_receiver_thread(void *arg) {
             clock_gettime(CLOCK_REALTIME, &ts_realtime);
             n->node.arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
             n->node.deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
-            if(tn->on_dispatch_cb)
-                tn->on_dispatch_cb(tn);
+            if(tn->on_receive_cb)
+                tn->on_receive_cb(n);
     } while(tn->run);
 
 done:
@@ -137,7 +137,7 @@ static void *accept_thread(void *arg) {
                     tn->parent = node;
                     tn->node = n;
                     tn->node_count++;
-                    tn->on_dispatch_cb = node->on_dispatch_cb;
+                    tn->on_receive_cb = node->on_receive_cb;
                     (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
                     if(node->on_accept_cb)
                         node->on_accept_cb(tn);
@@ -179,7 +179,7 @@ int connect_tcp_server(struct tcp_node *node){
         if(tn){
             tn->node = n;
             tn->node_count++;
-            tn->on_dispatch_cb = node->on_dispatch_cb;
+            tn->on_receive_cb = node->on_receive_cb;
             (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
             if(node->on_accept_cb)
                 node->on_accept_cb(tn);

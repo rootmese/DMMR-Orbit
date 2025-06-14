@@ -10,26 +10,6 @@ static struct circle_buffer* _cb = 0;
 static struct dmmr_scheduler* _sched = 0;
 static struct dmmr_socket *this = 0;
 
-
-static struct node_buffer *n_buffer = 0;
-static unsigned n_buffer_size = 0;
-static unsigned n_buffer_count = 0;
-
-struct node_buffer *get_struct_node_buffer(void) {
-    register struct node_buffer *p = n_buffer;
-    register struct node_buffer *p1 = n_buffer + n_buffer_size;
-    for (; p < p1; ++p)
-        if (!(p->run))
-            return p;
-    if(n_buffer_count >= n_buffer_size) {
-        n_buffer_size *= 2;
-        n_buffer = (struct node_buffer*)realloc(n_buffer, n_buffer_size * sizeof(struct node_buffer));
-        if(!n_buffer)
-            return 0;
-    }
-    return n_buffer + n_buffer_count++;
-}
-
 union protocol_base_cb *get_union_protocol_base_cb(void) {
     register union protocol_base_cb *p = cap;
     register union protocol_base_cb *p1 = cap + cap_size;
@@ -60,15 +40,14 @@ static void on_acception_connection_udp_cb(struct udp_node *input){
     int ret;
     if(input){
         struct session_connection_pool *p = get_recno_slot();
-        i(p){
+        if(p){
             __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
             ret = connect_udp_server(&(p->session.udp), 0);
             if(!ret){
                 ret = insert_session(_circle_buffer, p->session);
-                if(!ret){
+                if(!ret)
                     ret = _sched->insert(_sched, p);
-                    return 0;
-                }
+            }
         }
     }
     return EOF;
@@ -78,7 +57,7 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input){
     int ret;
     if(input){
         struct session_connection_pool *p = get_recno_slot();
-        i(p){
+        if(p){
             __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
             ret = connect_tcp_server(&(p->session.tcp), 0);
             if(!ret){
@@ -98,12 +77,12 @@ static inline void dispatcher_udp(struct node *n, unsigned nl){
 }
 
 static inline void dispatcher_tcp(struct node *n, unsigned nl){
-    if(u && nl)
+    if(n && nl)
         (void)tcp_send_to_client(n, nl);
 }
 
 static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
-    if(node){
+    if(n){
         switch(u->none.proto){
             case proto_udp_t:
                 dispatcher_udp(n, nl);
@@ -117,36 +96,34 @@ static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
     }
 }
 
-static inline int start_dispatcher_udp(ezp_addr_type, ezp_addr_type family, uint16_t port, const char* ip, void(*dispatcher_udp)(struct udp_node*)){
-    ret = udp_server_is_active();
+static inline int start_dispatcher_udp(const char* ip, uint16_t port){
+    int ret = udp_server_is_active();
     if(!ret)
         (void)connect_udp_server();
 }
 
-static void started_receiver_tcp_cb()
-
-static inline int start_dispatcher_tcp(ezp_addr_type, ezp_addr_type family, uint16_t port, const char* ip, void(*dispatcher_tcp)(protocol_base_cb*)){
+static inline int start_dispatcher_tcp(const char* ip, uint16_t port){
     unsigned char buf[sizeof(struct sockaddr_in6)];
-    cb = get_union_protocol_base_cb();
-    cb.tcp = get_tcp_node();
-    if(cb->tcp){
-        ezp_addr_type tyte = dns2ipaddr(ip, buf);
+    union protocol_base_cb *cb = get_union_protocol_base_cb();
+    if(cb){
+        ezp_addr_type type = dns2ipaddr(ip, buf);
         switch(type){
-            case EZP_IPV4:
-                __vcpy(&(cb->tcp->proto.ipv4), buf, sizeof(struct sockaddr_in));
+            case AF_INET:
+                __vcpy(&(cb->tcp.proto.ipv4), buf, sizeof(struct sockaddr_in));
                 break;
             case AF_INET6:
-                __vcpy(&(cb->tcp->proto.ipv6), buf, sizeof(struct sockaddr_in6));
+                __vcpy(&(cb->tcp.proto.ipv6), buf, sizeof(struct sockaddr_in6));
                 break;
             default:
                 break;
         }
-    cb->tcp->proto = proto_tcp_t;
-    cb->tcp->port = port;
-    cb->tcp->node.family = family;
-    cb->tcp->on_accept_cb = this->acception_cb;
-    cb->tcp->dispatcher_cb = dispatcher_cb_tcp;
-    ret = connect_tcp_server(tcp_node, ip);
+    }
+    cb->tcp.proto = proto_tcp_t;
+    cb->tcp.node_cfg.port = port;
+    cb->tcp.node_cfg.family = type;
+    cb->tcp.on_accept_cb = on_acception_connection_tcp_cb;
+    cb->tcp.on_receive_cb = on_receive_conection_cb;
+    ret = connect_tcp_server(cb->tcp, ip);
     if(ret)
         return EOF;
     else
@@ -167,6 +144,23 @@ static int start_dispatcher(proto_t proto, ezp_addr_type family, uint16_t port, 
     return 0;
 }
 
+int create_dispatcher_from_uri(const unsigned char *uri){
+    if(uri){
+        uint16_t port;
+        char host_buf[0x100];
+        proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
+        switch (proto) {
+            case proto_udp_t:
+                return start_dispatcher_udp(host_buf, port);
+                break;
+            case proto_tcp_t:
+                return start_dispatcher_tcp(host_buf, port);
+                break; /* Stupid Break */
+        }
+    }
+    return EOF;
+}
+
 static int start_acception(proto_t proto, uint16_t port, const char* ip) {
     int ret;
     union protocol_base_cb *cb;
@@ -175,24 +169,23 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
         case proto_udp_t:{
             unsigned char buf[sizeof(struct sockaddr_in6)];
             cb = get_union_protocol_base_cb();
-            cb->udp = get_udp_node();
-            if(cb.udp){
-                ezp_addr_type tyte = dns2ipaddr(ip, buf);
+            if(cb){
+                ezp_addr_type type = dns2ipaddr(ip, buf);
                 switch(type){
-                    case EZP_IPV4:
-                        __vcpy(&(cb->udp->proto.ipv4), buf, sizeof(struct sockaddr_in));
+                    case AF_INET:
+                        __vcpy(&(cb->udp.proto.ipv4), buf, sizeof(struct sockaddr_in));
                         break;
                     case AF_INET6:
-                        __vcpy(&(cb->udp->proto.ipv6), buf, sizeof(struct sockaddr_in6));
+                        __vcpy(&(cb->udp.proto.ipv6), buf, sizeof(struct sockaddr_in6));
                         break;
                     default:
                         break;
                 }
-                cb->udp->proto = proto_tcp_t;
-                cb->udp->port = port;
-                cb->udp->node.family = family;
-                cb->udp->on_accept_cb = this->acception_cb;
-                cb->udp->dispatcher_cb = dispatcher_cb_tcp;
+                cb->udp.proto = proto_udp_t;
+                cb->udp.node_cfg.port = port;
+                cb->udp.node_cfg.family = family;
+                cb->udp.on_accept_cb = on_acception_connection_udp_cb;
+                cb->udp.on_receive_cb = on_receive_conection_cb;
                 ret = start_udp_service(cb->udp);
                 //TODO Error treatment
             }
@@ -201,33 +194,29 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
         case proto_tcp_t:{
             unsigned char buf[sizeof(struct sockaddr_in6)];
             cb = get_union_protocol_base_cb();
-            cb.tcp = get_tcp_node();
-            if(cb->tcp){
-                ezp_addr_type tyte = dns2ipaddr(ip, buf);
+            if(cb){
+                ezp_addr_type type = dns2ipaddr(ip, buf);
                 switch(type){
-                    case EZP_IPV4:
-                        __vcpy(&(cb->tcp->proto.ipv4), buf, sizeof(struct sockaddr_in));
+                    case AF_INET:
+                        __vcpy(&(cb->tcp.proto.ipv4), buf, sizeof(struct sockaddr_in));
                         break;
                     case AF_INET6:
-                        __vcpy(&(cb->tcp->proto.ipv6), buf, sizeof(struct sockaddr_in6));
-                        brea;
+                        __vcpy(&(cb->tcp.proto.ipv6), buf, sizeof(struct sockaddr_in6));
+                        break;
                     default:
                         break;
                 }
-                cb->tcp->proto = proto_tcp_t;
-                cb->tcp->port = port;
-                cb->tcp->node.family = family;
-                cb->tcp->on_accept_cb = this->acception_cb;
-                cb->tcp->dispatcher_cb = dispatcher_cb_tcp;
+                cb->tcp.proto = proto_tcp_t;
+                cb->tcp.node_cfg.port = port;
+                cb->tcp.node_cfg.family = family;
+                cb->tcp.on_accept_cb = on_acception_connection_tcp_cb;
+                cb->tcp.on_receive_cb = on_receive_conection_cb;
                 ret = start_tcp_service(cb->tcp);
                 //TODO Error treatment
             }
         }
             break;
         }
-        case proto_none_udp:
-        default:
-            break;
     }
     return 0;
 }
@@ -235,21 +224,19 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
 static void reload(struct cfg_server_server* __cfg_server){
 }
 
-struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct cfg_server_server *cfg){
+struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct cfg_server_server *cfg, void (*acception_cb)(struct node*)){
     if(this)
         return 0;
 	struct dmmr_socket *p = (struct dmmr_socket*)calloc(1, sizeof(struct dmmr_socket));
 	if(p){
-        cap = (union protocol_base_cb*)calloc(1, sizeof(union protocol_base_cb));
+        cap = (union protocol_base_cb*)calloc(0x400, sizeof(union protocol_base_cb));
         if(cap){
             cap_size = 0x400;
 	        p->acception_cb  = acception_cb;
             p->dispatcher = dispatcher;
             p->start_acception = start_acception;
-            n_buffer = (struct node_buffer*)calloc(1, sizeof(struct node_buffer));
             this = p;
             (void)start_udp_socket();
-            (void)start_tcp_socket();
             return p;
         }
 	}
