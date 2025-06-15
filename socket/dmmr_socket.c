@@ -6,8 +6,8 @@ static union protocol_base_cb *cap = 0;
 static unsigned cap_size = 0;
 static unsigned cap_count = 0;
 
-static struct circle_buffer* cb = 0;
-static struct dmmrscheduler* sched = 0;
+static struct dmmr_circle_buffer* circle_buffer = 0;
+static struct dmmr_scheduler* sched = 0;
 static struct dmmr_socket *this = 0;
 
 static void (*on_accept_cb_udp)(struct udp_node*) = 0;
@@ -36,9 +36,9 @@ static void on_receive_conection_cb(struct node *n){
         // TODO verifca lock
         struct node_buffer *nb = get_struct_node_buffer();
         __vcpy(&(nb->n), n, sizeof(struct node_buffer));
-        thread_mutex_lock(&(cb->fifo_lock));
-        TAILQ_INSERT_TAIL(&(cb->fifo), nb, tailq);
-        pthread_mutex_unlock(&cb->fifo_lock);
+        thread_mutex_lock(&(circle_buffer->fifo_lock));
+        TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
+        pthread_mutex_unlock(&circle_buffer->fifo_lock);
     }
 }
 
@@ -237,7 +237,18 @@ static void set_acceptioncb_tcp(void (*on_accept_cb)(struct tcp_node*)){
     on_accept_cb_tcp = on_accept_cb;
 }
 
-struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmrscheduler* sched, struct cfg_server_server *cfg){
+static inline void set_scheduler(struct dmmr_scheduler *_sched){
+    sched = _sched;
+}
+
+void delete_dmmr_socket(void){
+    if(cap)
+        free(cap);
+    if(this)
+        fee(this);
+}
+
+struct dmmr_socket *new_dmmr_socket(struct dmmr_circle_buffer* __circle_buffer, struct cfg_server_server *__cfg){
     if(this)
         return 0;
 	struct dmmr_socket *p = (struct dmmr_socket*)calloc(1, sizeof(struct dmmr_socket));
@@ -251,8 +262,8 @@ struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmrschedul
             p->start_acception = start_acception;
             p->set_acception_cb_udp = set_acception_cb_udp;
             p->set_acception_cb_tcp = set_acception_cb_tcp;
-            cb = cb;
-            sched = sched;
+            p->scheduler = set_scheduler; //TODO as rotinas que usam scheduler devem estar as plugins, método temporário
+            circle_buffer = __circle_buffer;
             this = p;
             (void)start_udp_socket();
             return p;

@@ -1,5 +1,6 @@
 #include <defs.h>
 
+static struct cfg_server_server *cfg = 0;
 static struct circle_buffer* _circle_buffer = 0;
 static struct dmmr_scheduler* _sched = 0;
 static struct dmmr_socket* _sock = 0;
@@ -91,19 +92,21 @@ struct dmmr_session_connection_manager* new_session_connection_manager(
     if (!mgr)
         return 0;
 
+    cfg = css;
+
     mgr->reload                        = 0;
     mgr->accept                        = socket_accept;
     mgr->connect                       = socket_connect;
     mgr->trunk                         = trunk;
     mgr->close                         = socket_close;
     mgr->send                          = socket_send;
-    mgr->start_accept_from_uri        = socket_start_accept_from_uri;
-    mgr->create_dispatcher_from_uri   = socket_create_dispatcher_from_uri;
-    mgr->set_socket_acception_cb_udp  = socket_set_acception_cb_udp;
-    mgr->set_socket_acception_cb_tcp  = socket_set_acception_cb_tcp;
-    mgr->insert_session               = session_insert_session;
-    mgr->delete_session               = session_delete_session;
-    mgr->insert_scheduler             = sched_insert;
+    mgr->start_accept_from_uri         = socket_start_accept_from_uri;
+    mgr->create_dispatcher_from_uri    = socket_create_dispatcher_from_uri;
+    mgr->set_socket_acception_cb_udp   = socket_set_acception_cb_udp;
+    mgr->set_socket_acception_cb_tcp   = socket_set_acception_cb_tcp;
+    mgr->insert_session                = session_insert_session;
+    mgr->delete_session                = session_delete_session;
+    mgr->insert_scheduler              = sched_insert;
 
     _circle_buffer = cb;
     _sched = sched;

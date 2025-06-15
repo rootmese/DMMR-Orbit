@@ -2,6 +2,8 @@
 
 static struct circle_buffer *this = 0;
 
+static struct cfg_server_server *cfg = 0;
+
 static struct node_circle_buffer* buffer = 0;
 
 static int run = 0;
@@ -13,7 +15,6 @@ static void* fifo_worker(void* arg) {
     struct node_buffer* batch[MAX_BATCH];
     struct node_buffer** b = batch;
     do {
-        cycle_start = _get_monotonic_time_us();
         b = batch;
         pthread_mutex_lock(&this->fifo_lock);
         while (!TAILQ_EMPTY(&this->fifo) && (b - batch) < MAX_BATCH) {
@@ -67,16 +68,36 @@ static struct node_circle_buffer* get_current_node(void) {
 
 static int start(void){
     if(this){
+
+        buffer = (struct node_circle_buffer*)calloc(cfg->circle_buffer_size, sizeof(struct node_circle_buffer));
+        if (!buffer)
+            return 0;
+
+        CIRCLEQ_INIT(&(this->head));
+        TAILQ_INIT(&(this->fifo)); 
+        struct node_circle_buffer *prev = 0;
+        struct node_circle_buffer *p = buffer, *p1 = p + cfg->circle_buffer_size;
+        do
+        {
+            CIRCLEQ_INSERT_TAIL(&(this->head), p, circleq);
+            if (prev)
+                p->prev_ptr = prev;
+            prev = p;
+        } while (++p < p1);
+
+        this->cursor = CIRCLEQ_EMPTY(&this->head) ? 0 : CIRCLEQ_FIRST(&this->head);
+        CIRCLEQ_FIRST(&this->head)->prev_ptr = CIRCLEQ_LAST(&this->head);
+
         pthread_attr_t attr;
         struct sched_param param;
         run = !0;
         pthread_attr_init(&attr);
-        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);  // Escalonador em tempo real
-        param.sched_priority = 80;  // Prioridade entre 1 e 255 (quanto maior, mais prioridade)
+        pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+        param.sched_priority = 80;
         pthread_attr_setschedparam(&attr, &param);
-        pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
+        pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
         pthread_mutex_init(&this->fifo_lock, 0);
-        pthread_create(&(this->fifo_thread), 0, fifo_worker, this);
+        pthread_create(&(this->fifo_thread), &attr, fifo_worker, this);
         return 0;
     }
     else
@@ -87,6 +108,7 @@ void stop(void){
     if(this){
         run = 0;
         sleep(1);
+        pthread_mutex_destroy(&this->fifo_lock);
         if(buffer)
             free(buffer);
         free(this);
@@ -95,32 +117,11 @@ void stop(void){
     }
 }
 
-struct circle_buffer* new_circle_buffer(size_t size) {
+struct circle_buffer* new_circle_buffer(struct cfg_server_server *__cfg) {
     struct circle_buffer* cb = (struct circle_buffer*)calloc(1, sizeof(struct circle_buffer));
-    if (!cb)
+    if (!cb || !__cfg)
         return 0;
-
-    cb->buffer_size = size;
-    buffer = (struct node_circle_buffer*)calloc(size, sizeof(struct node_circle_buffer));
-    if (!buffer) {
-        free(cb);
-        return 0;
-    }
-    CIRCLEQ_INIT(&(cb->head));
-    TAILQ_INIT(&(cb->fifo)); 
-    struct node_circle_buffer *prev = 0;
-    node_circle_buffer *p = buffer, *p1 = p + cb->buffer_size;
-    do
-    {
-        CIRCLEQ_INSERT_TAIL(&(cb->head), p, circleq);
-        if (prev)
-            p->prev_ptr = prev;
-        prev = p;
-    } while (++p < p1);
-
-    cb->cursor = CIRCLEQ_EMPTY(&cb->head) ? 0 : CIRCLEQ_FIRST(&cb->head);
-    CIRCLEQ_FIRST(&cb->head)->prev_ptr = CIRCLEQ_LAST(&cb->head);
-
+    cfg = __cfg;
     cb->get_current_node = get_current_node;
     cb->iterate = iterate;
     cb->start = start;

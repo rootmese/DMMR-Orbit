@@ -4,7 +4,7 @@ static struct tcp_node *tcp_pool = 0;
 static unsigned tcp_pool_size = 0;
 static unsigned tcp_pool_count = 0;
 
-static struct node node_pool = 0;
+static struct node *node_pool = 0;
 static unsigned node_pool_size = 0;
 static unsigned node_pool_count = 0;
 
@@ -17,7 +17,7 @@ static struct node *get_node(void){
             return p;
     if(n_buffer_count >= n_buffer_size) {
         node_pool_size *= 2;
-        node_pool = (struct node_buffer*)realloc(node_pool, node_pool_size * sizeof(struct node));
+        node_pool = (struct node*)realloc(node_pool, node_pool_size * sizeof(struct node));
         if(!node_pool)
             return 0;
     }
@@ -32,7 +32,7 @@ int tcp_send_to_client(struct node *n,  size_t n_len) {
     do {
         iov[0].iov_base = n0->value;
         iov[0].iov_len = n0->value_size;
-        ssize_t sent = writev(n->fd, &iov, 1);
+        ssize_t sent = writev(n0->fd, &iov, 1);
         if (sent < 0) {
             switch(errno) {
                 case EAGAIN:
@@ -45,7 +45,6 @@ int tcp_send_to_client(struct node *n,  size_t n_len) {
     } while(++n0 < n1);
     return 0;
 }
-
 
 static void* tcp_receiver_thread(void *arg) {
     struct tcp_node *tn = (struct tcp_node *)arg;
@@ -111,7 +110,7 @@ static void *accept_thread(void *arg) {
                 (
                     node->node_cfg.fd,
                     ((node->node_cfg.family == AF_INET) ? ((struct sockaddr*)&client_addr) : ((struct sockaddr_in6*)&client_addr_v6)),
-                    ((node->node_cfg.family == AF_INET6) ? ((struct sockaddr*)&client_addr_v6) : (&addr_len_v6))
+                    ((node->node_cfg.family == AF_INET6) ? (&addr_len) : (&addr_len_v6))
                  );
             if(client_fd < 0) {
                 if(node->run)
@@ -164,7 +163,7 @@ int connect_tcp_server(struct tcp_node *node){
             goto return_close_socket_error;
         struct node *n = get_node();
         if(n){
-         n->fd = client_fd;
+         n->fd = sock;
         if (node->node_cfg.family == AF_INET) {
             n->port = ntohs(client_addr.sin_port);
             __vcpy(&(n->ipv4), &(client_addr.sin_addr), sizeof(struct in_addr));
@@ -296,49 +295,3 @@ void stop_tcp_socket(void) {
         free(tcp_pool);
 }
 
-
-// TODO Listar as iinterfaces de rede
-
-/*
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/types.h>
-
-int main() {
-    struct ifaddrs *ifaddr, *ifa;
-    char ip[INET6_ADDRSTRLEN];
-
-    if (getifaddrs(&ifaddr) == -1) {
-        perror("getifaddrs");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Interfaces de rede e IPs:\n\n");
-
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if (!ifa->ifa_addr)
-            continue;
-
-        int family = ifa->ifa_addr->sa_family;
-
-        if (family == AF_INET) { // IPv4
-            struct sockaddr_in *sa = (struct sockaddr_in *)ifa->ifa_addr;
-            inet_ntop(AF_INET, &(sa->sin_addr), ip, sizeof(ip));
-            printf("Interface: %s\tIPv4: %s\n", ifa->ifa_name, ip);
-        } else if (family == AF_INET6) { // IPv6 (opcional)
-            struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-            inet_ntop(AF_INET6, &(sa6->sin6_addr), ip, sizeof(ip));
-            printf("Interface: %s\tIPv6: %s\n", ifa->ifa_name, ip);
-        }
-    }
-
-    freeifaddrs(ifaddr);
-    return 0;
-}
-
-*/

@@ -39,7 +39,8 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "Falha ao criar o servidor\n");
                 exit(EXIT_FAILURE);
             }
-            server->run(server);
+            server->run();
+            server->stop();
             free_dmmr_server(server);
             break;
         }

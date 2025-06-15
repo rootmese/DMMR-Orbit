@@ -21,13 +21,11 @@ struct cfg_server_server{
 };
 
 struct dmmr_server {
-    struct circle_buffer* cb;
-    struct dmmr_parser* parser;
     struct cfg_daemon_server cfg_daemon;
+    struct cfg_server_server cfg;
     
-    void (*init)(struct dmmr_server*, const char*);
-    void (*run)(struct dmmr_server*);
-    void (*shutdown)(struct dmmr_server*);
+    void (*run)(void);
+    void (*stop)(void);
 };
 
 struct dmmr_server* new_dmmr_server(struct cfg_daemon_server*);

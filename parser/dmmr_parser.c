@@ -8,71 +8,66 @@
 extern FILE* yyin;
 extern int yylex();
 
+static uint8_t run = 0;
+
 static unsigned long last_crc = 0;
+static struct dmmr_parser *this = 0;
+static struct cfg_daemon_server *cfg_daemon = 0;
 
-static void parser_run(struct dmmr_parser* this) {
-    if (this)
-    {
-        generate_crc32_table();
-        last_crc = crc32_file((const char*)this->cfg_file);
+static int parser_load_config(void) {
 
-        if (!last_crc) {
-            perror("[parser] Erro ao calcular CRC inicial");
-            return;
-        }
-
-        FILE* f = fopen(this->config_path, "r");
-        if (!f) {
-            perror("[parser] Erro ao abrir arquivo de configuração");
-            return;
-        }
-
-        yyin = f;
-        yylex();
-        fclose(f);
-
-        // Aqui você poderia montar uma estrutura cfg_server ou algo do tipo,
-        // e chamar o callback para avisar que nova config foi carregada
-        if (this->handle_token) {
-            // Exemplo: chamar callback com token fictício (ou dados relevantes)
-            this->handle_token(this, "config_reload", this->config_path);
-        }
-
-            uint32_t current_crc = crc32_file(this->config_path);
-            if (current_crc && current_crc != last_crc) {
-                printf("[parser] Detecção de alteração no arquivo. Recarregando...\n");
-
-                last_crc = current_crc;
-
-                f = fopen(this->config_path, "r");
-                if (!f) {
-                    perror("[parser] Erro ao reabrir arquivo de configuração");
-                    continue;
-                }
-
-                yyin = f;
-                yylex();
-                fclose(f);
-
-                if (this->handle_token) {
-                    // Notifica nova configuração carregada
-                    this->handle_token(this, "config_reload", this->config_path);
-                }
-            }
+    FILE *f = fopen(cfg_daemon->config_path, "r");
+    if (!f) {
+        perror("[parser] erro ao abrir conf");
+        return -1;
     }
+
+    generate_crc32_table();
+    last_crc = crc32_file(cfg_daemon->config_path);
+
+    yyin = f;
+    yylex();
+    fclose(f);
+
+    if (this->handle_token)
+        this->handle_token(this, "config_reload", cfg_daemon->config_path);
+
+    return 0;
 }
 
-// Cria e retorna um parser com a função de run e ponteiro de callback
+static void parser_reload_config(void) {
+    do {
+        uint32_t crc = crc32_file(cfg_daemon->config_path);
+        if (crc && crc != last_crc) {
+            last_crc = crc;
+            parser_load_config();
+        }
+        sleep(1);
+    }while(run);
+}
+
+static void parser_stop_config(void) {
+    run = 0;
+    sleep(1);
+}
+
+static inline void dmmr_parser_set_handle_token(void (*handle_token)(struct dmmr_parser *, const char *, const char *)) {
+    if (this)
+        this->handle_token = handle_token;
+}
+
 struct dmmr_parser* new_dmmr_parser(struct cfg_daemon_server *__cfg_daemon) {
-    struct dmmr_parser* p = calloc(1, sizeof(struct dmmr_parser));
-    if (p){
-
-    p->run = parser_run;
-    p->last_crc = 0;
-    p->handle_token = __cfg_daemon->server_handle_token;
-
-    return p;
+    struct dmmr_parser* p = (struct dmmr_parser*)calloc(1, sizeof(struct dmmr_parser));
+    if (p && __cfg_daemon) {
+        cfg_daemon = __cfg_daemon;
+        p->load = parser_load_config;
+        p->run = parser_reload_config;
+        p->stop = parser_stop_config;
+        p->set_handle_token = dmmr_parser_set_handle_token;
+        p->last_crc = 0;
+        run = !0;
+        this = p;
+        return p;
     }
-    else
-        return 0;
+    return 0;
 }

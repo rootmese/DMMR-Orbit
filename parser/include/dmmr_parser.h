@@ -1,9 +1,8 @@
 #ifndef __DMMR_PARSER_H__
 #define __DMMR_PARSER_H__
 
-#include <stdio.h>
+#include <dmmr_parser.h>
 
-// Tipos de tokens reconhecidos
 typedef enum {
     TOKEN_UNKNOWN,
     TOKEN_KEYWORD,
@@ -12,21 +11,18 @@ typedef enum {
     TOKEN_EQUALS
 } dmmt_token_type;
 
-// Estrutura de um token genérico
 struct dmmt_token {
     dmmt_token_type type;
-    char value[0x100]; // tamanho arbitrário pra MVP
+    char value[0x100];
 };
 
-// Pseudo-interface de parser
 struct dmmr_parser {
-
-    unsigned char *cfg_file;
-    void (*init)(struct DMMR_parser* self);
-    server_handle_token handle_token;
+    int (*load)(void);
+    void (*run)(void);
+    void (*stop)(void);
+    void (*handle_token)(struct dmmr_parser*, const char*, const char*);
 };
 
-// Função para criar uma instância genérica de parser
-struct DMMR_parser* new_dmmr_parser(void);
+struct dmmr_parser* new_dmmr_parser(struct cfg_daemon_server*);
 
-#endif // __DMMR_PARSER_H__
+#endif 

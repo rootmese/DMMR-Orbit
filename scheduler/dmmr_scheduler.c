@@ -1,19 +1,14 @@
 #include <dmmr_scheduler.h>
 
-
 static size_t scheduler_connection_size = 0;
 static size_t scheduler_connection_count = 0;
-static struct scheduler_connection *slots; // neste buffer são armazedos os pools preemptivos
+static struct scheduler_connection *slots;
 static pthread_mutex_t slots_mutex = PTHREAD_MUTEX_INITIALIZER;
-static uint16_t run = 0;
+static uint8_t run = 0;
+
+static struct cfg_server_server *cfg = 0;
   
 struct dmmr_scheduler *this = 0;
-
-static uint64_t _get_time_us() {
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000000ULL) + tv.tv_usec;
-}
 
 static uint64_t _get_monotonic_time_us() {
     struct timespec ts;
@@ -21,7 +16,6 @@ static uint64_t _get_monotonic_time_us() {
     return ((uint64_t)ts.tv_sec * 1000000ULL) + (ts.tv_nsec / 1000);
 }
 
-// TODO, outra thread ficará constantemente procurando novas conexões para inserir em slots e realocar caso seja necessário, eu queria evitar mutex, porém creio que compensa
 static int ensure_capacity(void) {
     if (scheduler_connection_count >= scheduler_connection_size)
     {
@@ -62,15 +56,7 @@ static void* _reorder_thread(void* arg) {
             *(slots + left) = key;
         }
         pthread_mutex_unlock(&slots_mutex);
-
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        ts.tv_nsec += 10000; // 10µs
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+        NSLEEP_US(cfg->sleep_time);
     }while (run);
     return 0;
 }
@@ -91,14 +77,7 @@ static void* _check_and_send_thread(void* arg) {
             }
         }
         pthread_mutex_unlock(&slots_mutex);
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        ts.tv_nsec += 8000; // 8µs
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+        NSLEEP_US(cfg->sleep_time);
     }
     return 0;
 }
@@ -160,11 +139,11 @@ static int sched_start(void){
     if(this){
         pthread_attr_t attr;
         struct sched_param param;
-        run = !0;
         slots = (struct scheduler_connection*)calloc(0x400, sizeof(struct scheduler_connection));
         if(!slots)
             return EOF;
         scheduler_connection_size = 0x400;
+        run = !0;
         pthread_attr_init(&attr);
         pthread_attr_setschedpolicy(&attr, SCHED_FIFO);  // Escalonador em tempo real
         param.sched_priority = 80;  // Prioridade entre 1 e 255 (quanto maior, mais prioridade)
@@ -177,6 +156,13 @@ static int sched_start(void){
     }
     else
         return EOF;
+}
+
+static void sched_stop(void){
+    run = 0;
+    sleep(1);
+    if(slots)
+        free(slots);
 }
 
 static int sched_insert(struct session_connection_pool *pool){
@@ -207,11 +193,11 @@ static void sched_delete(struct session_connection_pool *pool){
     pthread_mutex_unlock(&slots_mutex);
 }
 
-struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *sock, struct cfg_server_server *__cfg_server)
-{
+struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *sock, struct cfg_server_server *__cfg_server){
     struct dmmr_scheduler *p = (struct dmmr_scheduler*)calloc(1, sizeof(struct dmmr_scheduler));
     if(p)
     {
+        cfg = __cfg_server;
         p->sock = sock;
         p->deadline = __cfg_server->scheduler_preemptive_deadline;
         p->reload = sched_reload;
