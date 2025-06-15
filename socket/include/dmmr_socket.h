@@ -2,17 +2,16 @@
 #define __DMMR_SOCKET_H__
 
 struct dmmr_socket{
-	void (*acception_cb)(struct node*); //populate circle buffer
-	void (*dispatcher_cb)(union protocol_base_cb*); // warm for consume create a new connection to send data
-	int (*start_acception)(proto_t, ezp_addr_type, uint16_t, const char*);
-	int (*stop_acception)(proto_t, ezp_addr_type, uint16_t);
-	int (*start_dispatcher)(proto_t, ezp_addr_type, uint16_t, const char*);
-	void (*stop_dispatcher)(proto_t, ezp_addr_type, uint16_t);
-	int (*dispatcher)(union protocol_base_cb*, struct node*, unsigned);
-	void (*reload)(struct dmmr_scheduler*);
+	void (*dispatcher)(union protocol_base_cb*, struct node*, unsigned);
+	int (*create_dispatcher_from_uri)(const unsigned char*);
+	int (*start_acception)(proto_t, uint16_t, const char*);
+	int (*start_accept_from_uri)(const unsigned char*);
+	void (*set_acception_cb_tcp)(void (*on_accept_cb)(struct tcp_node*));
+	void (*set_acception_cb_udp)(void (*on_accept_cb)(struct udp_node*));
+	void (*reload)(struct cfg_server_server*);
 };
 
-struct dmmr_socket *new_dmmr_socket(struct cfg_server_server*, void (*acception_cb)(struct node*), void (*dispatcher_cb)(union protocol_base_cb*));
+struct dmmr_socket *new_dmmr_socket(struct circle_buffer*, struct dmmr_scheduler*, struct cfg_server_server*);
 
 
 #endif

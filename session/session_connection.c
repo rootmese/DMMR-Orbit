@@ -24,8 +24,10 @@ struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
     register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
     for (; p < p1; ++p)
-        if (!(p->run))
+        if (!(p->run)){
+            __mset(p, 0, sizeof(struct session_connection_pool));
             return p;
+        }
     if (session_connection_pool_recno_count >= session_connection_pool_recno_size) {
         session_connection_pool_recno_size *= 2;
         recno = (struct udp_node*)realloc(recno, session_connection_pool_recno_size * sizeof(struct session_connection_pool_recno));
@@ -210,8 +212,8 @@ return_fail:
 }
 
 
-int insert_session(struct node_circle_buffer *cb, struct session_connection_pool *session) {
-    if(!cb || !session)
+int insert_session(struct session_connection_pool *session) {
+    if(!circle_buffer || !session)
         return EOF;
     struct session_connection_pool *entry = session;
     // Allocate array of nodes instead of node_circle_buffer
@@ -221,9 +223,17 @@ int insert_session(struct node_circle_buffer *cb, struct session_connection_pool
     entry->pool->pool_size = 0x400;
     entry->pool->pool_count = 0;
     entry->pool->run = !0;
-    entry->pool->cursor = get_current_node();
+    entry->pool->cursor = circle_buffer->get_current_node();
     (void)pthread_create(&entry->pool->thread, 0, session_worker, entry->pool);
         return 0;
+}
+
+void delete_session(struct session_connection_pool *session){
+    if(session){
+        session->run = 0;
+        sleep(1);
+        pthread_mutex_destroy(&(session->mutex));
+    }
 }
 
 int reload_session_conection(uint16_t port){

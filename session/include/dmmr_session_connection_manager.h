@@ -13,7 +13,13 @@ struct dmmr_session_connection_manager{
 	void (*close)(const unsigned char*);
 	int (*send)(const unsigned char*, unsigned);
 	int (*receive)(const unsigned char*, unsigned*);
-	void (*trunk)(const unsigned char*, const char*);
+	int (*start_accept_from_uri)(const unsigned char*);
+	int (*create_dispatcher_from_uri)(const unsigned char*);
+	void (*trunk)(const unsigned char*, const unsigned char*);
+	void (*set_socket_acception_cb_tcp)(void (*on_accept_cb)(struct tcp_node*));
+	void (*set_socket_acception_cb_udp)(void (*on_accept_cb)(struct udp_node*));
+	int (*insert_session)(struct session_connection_pool*);
+	int (*insert_scheduler)(struct session_connection_pool*);
 };
 
 struct dmmr_session_connection_manager* new_session_connection_manager

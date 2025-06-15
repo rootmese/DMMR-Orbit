@@ -21,9 +21,9 @@ void stop_session_connection(struct session_connection_pool*);
 
 int reload_session_conection(uint16_t); //não será contemplado no MVC
 
-int insert_session(struct node_circle_buffer*, struct session_connection_pool*);
+int insert_session(struct session_connection_pool*);
 
-void delete_session(uint16_t);
+void delete_session(struct session_connection_pool*);
 
 struct node_circle_buffer *get_session(uint16_t);
 

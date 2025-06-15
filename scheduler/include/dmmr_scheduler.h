@@ -18,12 +18,14 @@ struct dmmr_scheduler {
     uint64_t deadline;
     void *session_connection_queue;
     pthread_t reorder_thread;
+    pthread_t send_thread;
     struct dmmr_socket *sock;
-    int (*start)(struct dmmr_scheduler*);
-    void (*stop)(struct dmmr_scheduler*);
-    void (*trigger_send)(struct dmmr_scheduler*, struct scheduler_connection*);
-    void (*reload)(struct dmmr_scheduler*);
-    int (*insert)(struct dmmr_scheduler*, struct session_connection_pool*);
+    int (*start)(void);
+    void (*stop)(void);
+    void (*trigger_send)(struct scheduler_connection*);
+    void (*send)(struct node*, unsigned);
+    void (*reload)(void);
+    int (*insert)(struct session_connection_pool*);
     void(*delete)(struct session_connection_pool*);
 };
 

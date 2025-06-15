@@ -1,6 +1,17 @@
-#ifndef ____VCMP_H__
-#define ____VCMP_H__
+#ifndef ____VCPY_H__
+#define ____VCPY_H__
 
+#include <stddef.h>
+
+#if defined(__arm__) || defined(__ARM_ARCH) || \
+    defined(__mips__) || defined(__riscv) ||   \
+    defined(ARCH_SAFE_MEMCPY)
+
+#include <string.h>
+
+#define __vcpy memcmp
+
+#else
 static inline int __vcmp(const void *s1, const void *s2, size_t n)
 {
 	if (n) {
@@ -13,5 +24,7 @@ static inline int __vcmp(const void *s1, const void *s2, size_t n)
 	}
 	return 0;
 }
+
+#endif
 
 #endif

@@ -6,9 +6,15 @@ static union protocol_base_cb *cap = 0;
 static unsigned cap_size = 0;
 static unsigned cap_count = 0;
 
-static struct circle_buffer* _cb = 0;
-static struct dmmr_scheduler* _sched = 0;
+static struct circle_buffer* cb = 0;
+static struct dmmrscheduler* sched = 0;
 static struct dmmr_socket *this = 0;
+
+static void (*on_accept_cb_udp)(struct udp_node*) = 0;
+
+static void (*on_accept_cb_tcp)(struct tcp_node*) = 0;
+
+static void (*on_receive_cb)(struct node*) = 0;
 
 union protocol_base_cb *get_union_protocol_base_cb(void) {
     register union protocol_base_cb *p = cap;
@@ -30,9 +36,9 @@ static void on_receive_conection_cb(struct node *n){
         // TODO verifca lock
         struct node_buffer *nb = get_struct_node_buffer();
         __vcpy(&(nb->n), n, sizeof(struct node_buffer));
-        thread_mutex_lock(&(_cb->fifo_lock));
-        TAILQ_INSERT_TAIL(&(_cb->fifo), nb, tailq);
-        pthread_mutex_unlock(&_cb->fifo_lock);
+        thread_mutex_lock(&(cb->fifo_lock));
+        TAILQ_INSERT_TAIL(&(cb->fifo), nb, tailq);
+        pthread_mutex_unlock(&cb->fifo_lock);
     }
 }
 
@@ -46,7 +52,7 @@ static void on_acception_connection_udp_cb(struct udp_node *input){
             if(!ret){
                 ret = insert_session(_circle_buffer, p->session);
                 if(!ret)
-                    ret = _sched->insert(_sched, p);
+                    ret = sched->insert(sched, p);
             }
         }
     }
@@ -63,7 +69,7 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input){
             if(!ret){
                 ret = insert_session(_circle_buffer, p->session);
                 if(!ret){
-                    ret = _sched->insert(_sched, p);
+                    ret = sched->insert(sched, p);
                     return 0;
                 }
         }
@@ -121,7 +127,7 @@ static inline int start_dispatcher_tcp(const char* ip, uint16_t port){
     cb->tcp.proto = proto_tcp_t;
     cb->tcp.node_cfg.port = port;
     cb->tcp.node_cfg.family = type;
-    cb->tcp.on_accept_cb = on_acception_connection_tcp_cb;
+    cb->tcp.on_accept_cb = ((on_accept_cb_tcp) ? (on_accept_cb_tcp) : (on_acception_connection_tcp_cb));
     cb->tcp.on_receive_cb = on_receive_conection_cb;
     ret = connect_tcp_server(cb->tcp, ip);
     if(ret)
@@ -130,24 +136,11 @@ static inline int start_dispatcher_tcp(const char* ip, uint16_t port){
         return 0;
 }
 
-static int start_dispatcher(proto_t proto, ezp_addr_type family, uint16_t port, const char *ip, void(*dispatcher)(protocol_base_cb*)){
-    int ret;
-    union protocol_base_cb *cb;
-
-    switch (proto) {
-        case proto_udp_t:
-            break;
-        case proto_tcp_t:
-            break;
-        }
-    }
-    return 0;
-}
-
 int create_dispatcher_from_uri(const unsigned char *uri){
     if(uri){
         uint16_t port;
         char host_buf[0x100];
+        __mset(host_buf, 0, sizeof(host_buf));
         proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
         switch (proto) {
             case proto_udp_t:
@@ -184,7 +177,7 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
                 cb->udp.proto = proto_udp_t;
                 cb->udp.node_cfg.port = port;
                 cb->udp.node_cfg.family = family;
-                cb->udp.on_accept_cb = on_acception_connection_udp_cb;
+                cb->udp.on_accept_cb = ((on_accept_cb_udp) ? (on_accept_cb_udp) : (on_acception_connection_udp_cb));
                 cb->udp.on_receive_cb = on_receive_conection_cb;
                 ret = start_udp_service(cb->udp);
                 //TODO Error treatment
@@ -209,7 +202,7 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
                 cb->tcp.proto = proto_tcp_t;
                 cb->tcp.node_cfg.port = port;
                 cb->tcp.node_cfg.family = family;
-                cb->tcp.on_accept_cb = on_acception_connection_tcp_cb;
+                cb->tcp.on_accept_cb = ((on_accept_cb_tcp) ? (on_accept_cb_tcp) : (on_acception_connection_tcp_cb));
                 cb->tcp.on_receive_cb = on_receive_conection_cb;
                 ret = start_tcp_service(cb->tcp);
                 //TODO Error treatment
@@ -221,10 +214,30 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
     return 0;
 }
 
+static int start_accept_from_uri(const unsigned char *uri){
+    if(uri){
+        uint16_t port;
+        char host_buf[0x100];
+        __mset(host_buf, 0, sizeof(host_buf));
+        proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
+        if(!(proto == proto_none_t))
+            return start_acception(proto, port, host);
+    }
+    return EOF;
+}
+
 static void reload(struct cfg_server_server* __cfg_server){
 }
 
-struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmr_scheduler* sched, struct cfg_server_server *cfg, void (*acception_cb)(struct node*)){
+static void set_acceptioncb_udp(void (*on_accept_cb)(struct udp_node*)){
+    on_accept_cb_udp = on_accept_cb;
+}
+
+static void set_acceptioncb_tcp(void (*on_accept_cb)(struct tcp_node*)){
+    on_accept_cb_tcp = on_accept_cb;
+}
+
+struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmrscheduler* sched, struct cfg_server_server *cfg){
     if(this)
         return 0;
 	struct dmmr_socket *p = (struct dmmr_socket*)calloc(1, sizeof(struct dmmr_socket));
@@ -232,9 +245,14 @@ struct dmmr_socket *new_dmmr_socket(struct circle_buffer* cb, struct dmmr_schedu
         cap = (union protocol_base_cb*)calloc(0x400, sizeof(union protocol_base_cb));
         if(cap){
             cap_size = 0x400;
-	        p->acception_cb  = acception_cb;
             p->dispatcher = dispatcher;
+            p->create_dispatcher_from_uri = create_dispatcher_from_uri;
+            p->reload = reload;
             p->start_acception = start_acception;
+            p->set_acception_cb_udp = set_acception_cb_udp;
+            p->set_acception_cb_tcp = set_acception_cb_tcp;
+            cb = cb;
+            sched = sched;
             this = p;
             (void)start_udp_socket();
             return p;

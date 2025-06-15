@@ -7,40 +7,42 @@ static struct node_circle_buffer* buffer = 0;
 static int run = 0;
 
 static void* fifo_worker(void* arg) {
-    struct node_circle_buffer* n = 0;
+    const int MAX_BATCH = 0x20; //valor será caso de estudo, tuning via compilação
+    struct node_circle_buffer* slot = 0;
+    struct node_buffer* *batch_ptr = 0;
+    struct node_buffer* batch[MAX_BATCH];
+    struct node_buffer** b = batch;
     do {
-        while (!TAILQ_EMPTY(this->fifo)) {
-            pthread_mutex_lock(&(this->fifo_lock));
-            n = get_current_node(this);
-            struct node_buffer* f = TAILQ_FIRST(this->fifo);
-            if (n && f)
-            {
-                __vcpy(n, f->n, sizeof(struct node));
-                TAILQ_REMOVE(&(this->fifo), f, tailq);
-            }
-            pthread_mutex_unlock(&(this->fifo_lock));
+        cycle_start = _get_monotonic_time_us();
+        b = batch;
+        pthread_mutex_lock(&this->fifo_lock);
+        while (!TAILQ_EMPTY(&this->fifo) && (b - batch) < MAX_BATCH) {
+            *b = TAILQ_FIRST(&this->fifo);
+            TAILQ_REMOVE(&this->fifo, *b, tailq);
+            ++b;
         }
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        if (timespec_less(&now, &next_sleep)) {
-            struct timespec remaining = {
-                .tv_sec = next_sleep.tv_sec - now.tv_sec,
-                .tv_nsec = next_sleep.tv_nsec - now.tv_nsec
-            };
-            if (remaining.tv_nsec < 0) {
-                remaining.tv_sec--;
-                remaining.tv_nsec += 1000000000;
-            }
-            if (remaining.tv_sec > 0 || remaining.tv_nsec > 18) {
-                nanosleep(&remaining, NULL);
-            }
-        } else {
-            next_sleep.tv_sec = 0;
-            next_sleep.tv_nsec = 0;
+        pthread_mutex_unlock(&this->fifo_lock);
+        if (b != batch) {
+            batch_ptr = batch;
+            do {
+                slot = get_current_node(this);
+                if (slot && *batch_ptr)
+                    __vcpy(slot, (*batch_ptr)->n, sizeof(struct node));
+            } while (++batch_ptr < b);
         }
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_nsec += 10000; // 10µs
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, 0);
     } while (run);
+
     return 0;
 }
+
 
 static struct node_circle_buffer *iterate(struct node_circle_buffer *cursor, struct circleq_head *head) {
     if (!cursor || CIRCLEQ_EMPTY(head))

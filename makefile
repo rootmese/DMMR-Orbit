@@ -30,6 +30,9 @@ else
     BUILD_TYPE := Debug
 endif
 
+# Para builds seguros (ex: cross-compilação para ARM, RISC-V)
+CFLAGS += -DARCH_SAFE_MEMSET
+
 # Targets principais
 .PHONY: all debug release clean
 

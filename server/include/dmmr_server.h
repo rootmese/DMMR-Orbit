@@ -5,6 +5,10 @@
 
 struct cfg_daemon_server {
     uint8_t  cfg_file[0x400];
+};
+
+struct cfg_server_server{
+    uint64_t scheduler_preemptive_deadline;
     uint16_t sleep_time;
     uint16_t session_size;
     uint32_t circle_buffer_size;
@@ -12,9 +16,8 @@ struct cfg_daemon_server {
     uint16_t __filler1;
     uint64_t real_time_dead_line;
     uint64_t real_time_user_defined;
-
-struct cfg_server_server{
-    uint64_t scheduler_preemptive_deadline;
+    uint8_t trunk_accept_uri[0x40];
+    uint8_t trunk_dispatch_uri[0x40];
 };
 
 struct dmmr_server {

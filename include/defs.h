@@ -34,6 +34,7 @@
 #include "crc.h"
 #include "update_session_counter.h"
 #include "__node_cmp.h"
+#include "__mset.h"
 
 #ifndef MTU_SIZE
 #define MTU_SIZE 1500
@@ -83,7 +84,8 @@ struct none_node{
 struct tcp_node {
     proto_t proto;
     uint8_t run;
-    uint8_t __filler0[3];
+    uint8_t origin;            // 0x3 = tcp[0], 0x4 = tcp[1]
+    uint8_t __filler0[2];      // alinhamento
     uint32_t node_count;
     uint32_t __filler1;
     struct node *node;
@@ -97,7 +99,8 @@ struct tcp_node {
 struct udp_node {
     proto_t proto;
     uint8_t run;
-    uint8_t __filler0[3];
+    uint8_t origin;            // 0x1 = udp[0], 0x2 = udp[1]
+    uint8_t __filler0[2];      // alinhamento
     uint32_t node_count;
     uint32_t __filler1;
     struct node *node;
@@ -105,7 +108,7 @@ struct udp_node {
     pthread_t accept_thread;
     void (*on_accept_cb)(struct udp_node*);
     void (*on_receive_cb)(struct node*);
-};   
+}; 
 
 union protocol_base_cb{
     struct none_node none;

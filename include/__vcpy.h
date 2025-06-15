@@ -1,6 +1,18 @@
 #ifndef ____VCPY_H__
 #define ____VCPY_H__
 
+#include <stddef.h>
+
+#if defined(__arm__) || defined(__ARM_ARCH) || \
+    defined(__mips__) || defined(__riscv) ||   \
+    defined(ARCH_SAFE_MEMCPY)
+
+#include <string.h> // fallback
+
+#define __vcpy memcpy
+
+#else
+
 static inline void __vcpy(void *__d, void *__o, size_t __s)
 {
 	if(__d && __o && __s)
@@ -29,3 +41,5 @@ static inline void __vcpy(void *__d, void *__o, size_t __s)
 }
 
 #endif
+
+#endif // ____VCPY_H__

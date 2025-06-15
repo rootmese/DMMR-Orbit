@@ -41,15 +41,14 @@ static int ensure_capacity(void) {
         return 0;
 }
 
-static void* _reorder(void* arg) {
-    struct dmmr_scheduler* s = (struct dmmr_scheduler*)arg;
+static void* _reorder_thread(void* arg) {
+    (void)arg;
     do {
         pthread_mutex_lock(&slots_mutex);
         for (int i = 1; i < scheduler_connection_count; i++) {
             struct scheduler_connection key = *(slots + i);
             uint64_t key_deadline = key.realtime_deadline_us;
-            int left = 0;
-            int right = i - 1;
+            int left = 0, right = i - 1;
             while (left <= right) {
                 int mid = (left + right) / 2;
                 if ((*(slots + mid)).realtime_deadline_us <= key_deadline)
@@ -62,85 +61,106 @@ static void* _reorder(void* arg) {
             }
             *(slots + left) = key;
         }
-        // TODO validar estender o lock para a rotina abaixo
+        pthread_mutex_unlock(&slots_mutex);
+
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_nsec += 10000; // 10µs
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+    }while (run);
+    return 0;
+}
+
+
+static void* _check_and_send_thread(void* arg) {
+    struct dmmr_scheduler* s = (struct dmmr_scheduler*)arg;
+    while (run) {
         uint64_t now = _get_monotonic_time_us();
+
+        pthread_mutex_lock(&slots_mutex);
         for (int i = 0; i < scheduler_connection_count; i++) {
             struct scheduler_connection* conn = slots + i;
             if (now + SCHEDULER_DEADLINE_TOLERANCE_US >= conn->realtime_deadline_us) {
                 s->trigger_send(conn);
             } else {
-                break;
+                break; // slots estão ordenados!
             }
         }
-        struct timespec next;
-        clock_gettime(CLOCK_MONOTONIC, &next);
-        next.tv_nsec += 9000; // 9 µs em nanosegundos, torcar para tempo_real confugurado / 2
-        if (next.tv_nsec >= 1000000000) {
-            next.tv_sec++;
-            next.tv_nsec -= 1000000000;
-        }
         pthread_mutex_unlock(&slots_mutex);
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
-    } while(!0);
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_nsec += 8000; // 8µs
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+    }
+    return 0;
 }
 
-static void trigger_send(scheduler_connection* conn) {
+static void sched_trigger_snd(scheduler_connection* conn) {
     unsigned siz = 0;
     if(!conn)
         return;
     struct session_connection_pool* pool = conn->session_ptr;
     union protocol_base_cb *u = (&(pool->session));
-
     if (!pool || !u)
         return;
+    pthread_mutex_lock(&pool->mutex);
     unsigned count = 0;
     struct node *n0 = pool->poll, *n1 = n0 + pool->pool_count;
     do{
         ++count;
     }while(++n0 < n1);
     this->sock->dispatcher(&(pool->session), pool->poll, count);
-    pthread_mutex_lock(&pool->mutex);
     pool->pool_count = 0;
-    memset(pool->pool, 0, pool->pool_size * sizeof(struct node));
+    __mset(pool->pool, 0, pool->pool_size * sizeof(struct node));
+    pthread_mutex_unlock(&pool->mutex);
     conn->last_active_time_us = 0;
     conn->realtime_deadline_us = 0;
     conn->deadline_us = 0;
-    pthread_mutex_unlock(&pool->mutex);
 }
 
 
-static void send(scheduler_connection* conn, struct node *n, unsigned s) {
+static void sched_snd(struct scheduler_connection* conn, struct node *n, unsigned s) {
     unsigned siz = 0;
     if(!conn)
         return;
     struct session_connection_pool* pool = conn->session_ptr;
     union protocol_base_cb *u = (&(pool->session));
-
     if (!pool || !u)
         return;
-
+    pthread_mutex_lock(&(pool->mutex));
     siz = ((pool->pool_size <= 6) ? (pool->pool_size) : (6));
     struct node *n0 = n, *n1 = n0 + siz;
     do{
         this->sock->dispatcher(u, n0, s);
     }while(++n0 < n1);
-    pthread_mutex_lock(&(pool->mutex));
     __bcpy(n + siz, n, (pool->pool_size - siz) * sizeof(struct node));
+    pthread_mutex_lock(&slots_mutex);
     conn->last_active_time_us = n->arrival;
     conn->realtime_deadline_us = n->deadline;
     conn->deadline_us = n->deadline;
     pool->pool_count -= siz;
     pool->pool_size -= siz;
+    pthread_mutex_unlock(&slots_mutex);
     pthread_mutex_unlock(&(pool->mutex));
+    
 }
 
-static void reload(struct cfg_server_server* __cfg_server){
+static void sched_reload(struct cfg_server_server* __cfg_server){
 }
 
-static int start(struct dmmr_scheduler *this){
+static int sched_start(void){
     if(this){
         pthread_attr_t attr;
         struct sched_param param;
+        run = !0;
         slots = (struct scheduler_connection*)calloc(0x400, sizeof(struct scheduler_connection));
         if(!slots)
             return EOF;
@@ -151,20 +171,15 @@ static int start(struct dmmr_scheduler *this){
         pthread_attr_setschedparam(&attr, &param);
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
         pthread_mutex_init(&slots_mutex, 0);
-        pthread_create(&this->worker_thread, 0, _reorder, this);
+        pthread_create(&this->worker_thread, &attr, _reorder_thread, this);
+        pthread_create(&this->send_thread, &attr, _check_and_send_thread, this);
         return 0;
     }
     else
         return EOF;
 }
 
-static void stop(struct dmmr_scheduler *this){
-    pthread_cancel(this->worker_thread);
-    pthread_join(this->worker_thread, 0);
-
-}
-
-static int insert(struct dmmr_scheduler *this, struct session_connection_pool *pool){
+static int sched_insert(struct session_connection_pool *pool){
     int ret = ensure_capacity();
     if(ret)
         return EOF;
@@ -180,16 +195,16 @@ static int insert(struct dmmr_scheduler *this, struct session_connection_pool *p
     }
 }
 
-static void delete(struct session_connection_pool *pool){
+static void sched_delete(struct session_connection_pool *pool){
+    pthread_mutex_lock(&slots_mutex);
     struct scheduler_connection *p0 = slots, *p1 = p0 + scheduler_connection_count;
     for (; p0 < p1; ++p0)
             if (p0->session_ptr == pool){
-                pthread_mutex_lock(&slots_mutex);
                 __bcpy(p0 + 1, p0, (p1 - (p0 + 1)) * sizeof(struct scheduler_connection));
                 --scheduler_connection_count;
-                pthread_mutex_unlock(&slots_mutex);
                 break;
             }
+    pthread_mutex_unlock(&slots_mutex);
 }
 
 struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *sock, struct cfg_server_server *__cfg_server)
@@ -199,11 +214,13 @@ struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *sock, struct cfg_s
     {
         p->sock = sock;
         p->deadline = __cfg_server->scheduler_preemptive_deadline;
-        p->reload = reload;
-        p->start = start;
-        p->stop = stop;
-        p->insert = insert;
-        p->delete = delete;
+        p->reload = sched_reload;
+        p->start = sched_start;
+        p->stop = sched_stop;
+        p->insert = sched_insert;
+        p->delete = sched_delete;
+        p->send = sched_snd;
+        p->trigger_send = sched_trigger_snd;
         this = p;
         return p;
     }
