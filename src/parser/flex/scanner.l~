@@ -1,0 +1,54 @@
+%{
+#include <stdio.h>
+#include "dmmr_parser.h"
+
+extern struct dmmr_parser* current_parser;
+%}
+
+%option noyywrap
+
+%%
+
+[a-zA-Z_][a-zA-Z0-9_]* {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "IDENT", yytext);
+    return TOKEN_IDENT;
+}
+
+\"[^\"]*\" {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "STRING", yytext);
+    return TOKEN_STRING;
+}
+
+[0-9]+ {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "NUMBER", yytext);
+    return TOKEN_NUMBER;
+}
+
+"," {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "COMMA", yytext);
+    return TOKEN_COMMA;
+}
+
+";" {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "SEMICOLON", yytext);
+    return TOKEN_SEMICOLON;
+}
+
+[ \t\n\r]+ ; // Ignora espaços e quebras de linha
+
+. {
+    if (current_parser && current_parser->handle_token)
+        current_parser->handle_token(current_parser, "SYMBOL", yytext);
+    return TOKEN_SYMBOL;
+}
+
+%%
+
+int yywrap(void) {
+    return 1;
+}

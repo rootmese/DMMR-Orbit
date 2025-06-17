@@ -1,0 +1,14 @@
+#ifndef __DMMR_PLUGIN_H__
+#define __DMMR_PLUGIN_H__
+
+#include <defs.h>
+#include <dmmr_session_connection_manager.h>
+
+struct dmmr_plugin{
+	void (*reload)(void);
+	void (*load)(void);
+};
+
+struct dmmr_plugin *new_dmmr_plugin(struct dmmr_session_connection_manager*, struct cfg_server_server*);
+
+#endif

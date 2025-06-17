@@ -1,25 +1,26 @@
 # Makefile para dmmr-server
 
-# Diretórios
+# Diretórios base
 SRC_DIR := src
-INC_DIR := include
 BUILD_DIR := build
 BIN_DIR := bin
 
 # Arquivo final
 TARGET := $(BIN_DIR)/dmr-server
 
-# Lista de arquivos .c
-SRCS := $(wildcard $(SRC_DIR)/*.c)
-OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+# Lista de arquivos .c recursivamente
+SRCS := $(shell find $(SRC_DIR) -name '*.c')
+OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
-# Adiciona recursivamente todos os subdiretórios de include
-INCLUDE_DIRS := $(shell find $(INC_DIR) -type d)
+# Busca todos os diretórios chamados "include" dentro de src/
+INCLUDE_DIRS := $(shell find $(SRC_DIR) -type d -name include)
 INCLUDES := $(addprefix -I, $(INCLUDE_DIRS))
 
 # Flags comuns
 CFLAGS := -Wall -Wextra -std=gnu11 $(INCLUDES)
 LDFLAGS :=
+LDFLAGS += -lrt
+
 
 # Configurações por tipo de build
 ifeq ($(BUILD),release)
@@ -50,14 +51,15 @@ $(TARGET): $(OBJS) | $(BIN_DIR)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS)
 
 # Compilação de .c → .o
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)/%/
 	@echo "[CC] $< → $@"
-	$(CC) $(CFLAGS) -c $< -o $@ 
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Criação dos diretórios bin e build se não existirem
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+# Garante que o diretório de destino exista
+$(BUILD_DIR)/%/:
+	mkdir -p $(dir $@)
 
+# Criação dos diretórios bin
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
