@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "dmmr_parser.h"
+#include <dmmr_parser.h>
 
-extern struct dmmr_parser* current_parser;
+extern void server_handle_token(const char *type, const char *value);
 
 #define SEND_TOKEN(type, val) \
     do { \
-        if (current_parser && current_parser->handle_token) \
-            current_parser->handle_token(current_parser, type, val); \
+        if (server_handle_token) \
+            server_handle_token(type, val); \
     } while (0)
 %}
 
@@ -67,6 +67,3 @@ TRUNK_DISPATCH_URI              { SEND_TOKEN("KEYWORD", "TRUNK_DISPATCH_URI"); r
 
 %%
 
-int yywrap(void) {
-    return 1;
-}

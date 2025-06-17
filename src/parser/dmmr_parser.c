@@ -6,17 +6,19 @@
 #include <string.h>
 #include <unistd.h>
 
+
 extern FILE* yyin;
 extern int yylex();
+
+extern void server_handle_token(const char *type, const char *value);
 
 static uint8_t run = 0;
 
 static unsigned long last_crc = 0;
+
 static struct dmmr_parser *this = 0;
 
 static struct cfg_daemon_server *cfg_daemon = 0;
-
-static void (*handle_token)(const char *, const char *) = 0;
 
 static int parser_load_config(void) {
 
@@ -33,8 +35,7 @@ static int parser_load_config(void) {
     yylex();
     fclose(f);
 
-    if (handle_token)
-        handle_token("config_reload", (char*)(cfg_daemon->cfg_file));
+    server_handle_token("config_reload", (char*)(cfg_daemon->cfg_file));
 
     return 0;
 }
@@ -55,11 +56,6 @@ static void parser_stop_config(void) {
     sleep(1);
 }
 
-static inline void dmmr_parser_set_handle_token(void (*handle_token)(const char *, const char *)) {
-    if (this)
-        handle_token = handle_token;
-}
-
 struct dmmr_parser* new_dmmr_parser(struct cfg_daemon_server *__cfg_daemon) {
     struct dmmr_parser* p = (struct dmmr_parser*)calloc(1, sizeof(struct dmmr_parser));
     if (p && __cfg_daemon) {
@@ -67,7 +63,6 @@ struct dmmr_parser* new_dmmr_parser(struct cfg_daemon_server *__cfg_daemon) {
         p->load = parser_load_config;
         p->run = parser_reload_config;
         p->stop = parser_stop_config;
-        p->handle_token = dmmr_parser_set_handle_token;
         run = !0;
         this = p;
         return p;

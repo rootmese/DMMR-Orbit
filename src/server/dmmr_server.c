@@ -57,53 +57,8 @@ static void handle_signal(int sig) {
     }
 }
 
-static void server_handle_token(const char* type, const char* value) {
-    // static int parsing_ports = 0;
-    // static unsigned start_port = 0;
-    // static unsigned expect_range = 0;
-
-/*    if (!strcmp(type, "PORTS")) {
-        parsing_ports = 1;
-        parser->num_ports = 0;
-        start_port = 0;
-        expect_range = 0;
-        return;
-    }*/
-/*
-    if (parsing_ports) {
-        if (!strcmp(type, "NUMBER")) {
-            unsigned port = (unsigned)atoi(value);
-            if (expect_range) {
-                if (start_port && port > start_port) {
-                    for (unsigned p = start_port; p <= port; p++) {
-                        if (parser->num_ports < MAX_PORTS)
-                            parser->ports[parser->num_ports++] = p;
-                    }
-                }
-                start_port = 0;
-                expect_range = 0;
-            } else if (start_port) {
-                if (parser->num_ports < MAX_PORTS)
-                    parser->ports[parser->num_ports++] = start_port;
-                start_port = port;
-            } else {
-                start_port = port;
-            }
-        } else if (!strcmp(type, "DASH")) {
-            expect_range = 1;
-        } else if (!strcmp(type, "COMMA")) {
-            if (start_port && parser->num_ports < MAX_PORTS)
-                parser->ports[parser->num_ports++] = start_port;
-            start_port = 0;
-        } else if (!strcmp(type, "SEMICOLON")) {
-            if (start_port && parser->num_ports < MAX_PORTS)
-                parser->ports[parser->num_ports++] = start_port;
-            parsing_ports = 0;
-        }
-        return;
-    }*/
-
-    // Novo: interpretar configurações
+void server_handle_token(const char *type, const char *value)
+{
     if (!strcmp(type, "KEYWORD")) {
         if (!strcmp(value, "SESSION_SIZE")) state = SET_SESSION_SIZE;
         else if (!strcmp(value, "SLEEP_TIME")) state = SET_SLEEP_TIME;
@@ -116,7 +71,7 @@ static void server_handle_token(const char* type, const char* value) {
         else if (!strcmp(value, "SCHEDULER_PREEMPTIVE_DEADLINE")) state = SET_SCHEDULER_PREEMPTIVE_DEADLINE;
         else state = NONE;
     }
-    else if (!strcmp(type, "NUMBER") || !strcmp(type, "STRING")) {
+    else if (!strcmp(type, "NUMBER")) {
         switch (state) {
             case SET_SCHEDULER_PREEMPTIVE_DEADLINE:
                 cfg.scheduler_preemptive_deadline = strtoull(value, 0, 10); break;
@@ -132,15 +87,28 @@ static void server_handle_token(const char* type, const char* value) {
                 cfg.real_time_dead_line = strtoull(value, 0, 10); break;
             case SET_REAL_TIME_USER_DEFINED:
                 cfg.real_time_user_defined = strtoull(value, 0, 10); break;
-            case SET_TRUNK_ACCEPT_URI:
-                strlcpy((char*)cfg.trunk_accept_uri, value, sizeof(cfg.trunk_accept_uri)); break;
-            case SET_TRUNK_DISPATCH_URI:
-                strlcpy((char*)cfg.trunk_dispatch_uri, value, sizeof(cfg.trunk_dispatch_uri)); break;
             default:
                 break;
         }
+        state = NONE;
     }
-    state = NONE;
+    else if (!strcmp(type, "STRING")) {
+        const char *src = value + 1; // pula aspas
+        size_t len = strlen(src);
+        if (len > 0 && src[len - 1] == '"') ((char*)src)[len - 1] = '\0';
+
+        switch (state) {
+            case SET_TRUNK_ACCEPT_URI:
+                strncpy((char*)cfg.trunk_accept_uri, src, sizeof(cfg.trunk_accept_uri)-1);
+                break;
+            case SET_TRUNK_DISPATCH_URI:
+                strncpy((char*)cfg.trunk_dispatch_uri, src, sizeof(cfg.trunk_dispatch_uri)-1);
+                break;
+            default:
+                break;
+        }
+        state = NONE;
+    }
 }
 
 
@@ -158,7 +126,6 @@ static int server_run(void){
         if(!parser)
             goto return_error;
 
-        parser->handle_token(server_handle_token);
         ret = parser->load();
         if(ret)
             goto return_error;

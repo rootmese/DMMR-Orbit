@@ -222,3 +222,7 @@ void disconnect_udp_server(struct udp_node *node) {
     if (udp_pool)
         free(udp_pool);
 }
+
+int start_udp_socket(void){
+    return 0;
+}

@@ -4,25 +4,28 @@
 SRC_DIR := src
 BUILD_DIR := build
 BIN_DIR := bin
+LEX_SRC := $(SRC_DIR)/parser/scanner.l
+LEX_C := $(SRC_DIR)/parser/scanner.c
+LEX_H := $(SRC_DIR)/parser/scanner.h
 
 # Arquivo final
-TARGET := $(BIN_DIR)/dmr-server
+TARGET := $(BIN_DIR)/dmmr_orbit
 
-# Lista de arquivos .c recursivamente
+# Lista de arquivos .c, incluindo scanner.c
 SRCS := $(shell find $(SRC_DIR) -name '*.c')
-OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+SRCS += $(LEX_C)
 
-# Busca todos os diretórios chamados "include" dentro de src/
+# Geração dos .o equivalentes
+OBJS := $(SRCS:%.c=$(BUILD_DIR)/%.o)
+
+# Busca todos os diretórios "include" dentro de src/
 INCLUDE_DIRS := $(shell find $(SRC_DIR) -type d -name include)
 INCLUDES := $(addprefix -I, $(INCLUDE_DIRS))
 
-# Flags comuns
+# Flags de compilação
 CFLAGS := -Wall -Wextra -std=gnu11 $(INCLUDES)
-LDFLAGS :=
-LDFLAGS += -lrt
+LDFLAGS := -lrt
 
-
-# Configurações por tipo de build
 ifeq ($(BUILD),release)
     CFLAGS += -O2 -fPIC -DPIC
     BUILD_TYPE := Release
@@ -31,8 +34,11 @@ else
     BUILD_TYPE := Debug
 endif
 
-# Para builds seguros (ex: cross-compilação para ARM, RISC-V)
 CFLAGS += -DARCH_SAFE_MEMSET
+
+# Ferramentas de scanner
+LEX := flex
+LFLAGS := --header-file=$(LEX_H)
 
 # Targets principais
 .PHONY: all debug release clean
@@ -51,25 +57,23 @@ $(TARGET): $(OBJS) | $(BIN_DIR)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS)
 
 # Compilação de .c → .o
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)/%/
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)/%/
 	@echo "[CC] $< → $@"
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Garante que o diretório de destino exista
+# Garante a criação de subdiretórios recursivamente
 $(BUILD_DIR)/%/:
-	mkdir -p $(dir $@)
+	@mkdir -p $(dir $@)
 
-# Criação dos diretórios bin
 $(BIN_DIR):
-	mkdir -p $(BIN_DIR)
+	@mkdir -p $(BIN_DIR)
 
-# Gerar scanner.c a partir de scanner.l, se usado
-LEX = flex
-LFLAGS = --header-file=scanner.h
-
-scanner.c: scanner.l
-	$(LEX) $(LFLAGS) -o $@ $<
+# Scanner automático com Flex
+$(LEX_C) $(LEX_H): $(LEX_SRC)
+	@echo "[LEX] $< → $@"
+	$(LEX) $(LFLAGS) -o $(LEX_C) $(LEX_SRC)
 
 # Limpeza
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	@echo "[CLEAN]"
+	@rm -rf $(BUILD_DIR) $(BIN_DIR) $(LEX_C) $(LEX_H)
