@@ -12,7 +12,7 @@ static struct cfg_daemon_server cfg;
 
 static void process_args(int argc, char **argv) {
     int opt;
-    while ((opt = getopt(argc, argv, "f:")) != EOF) {
+    while ((opt = getopt(argc, argv, "d:f:")) != EOF) {
         switch (opt) {
             case 'f': // Arquivo de configuração
                 strlcpy((char*)cfg.cfg_file, optarg, sizeof(cfg.cfg_file) - 1);
@@ -22,6 +22,9 @@ static void process_args(int argc, char **argv) {
                     exit(EXIT_FAILURE);
                 }
                 break;
+            case 'd':
+                cfg.daemonize = atoi(optarg) & 0xFF;
+                break;
             default: // Opção inválida
                 fprintf(stderr, "Uso: %s [-f arquivo.conf]\n", argv[0]);
                 exit(EXIT_FAILURE);
@@ -29,13 +32,27 @@ static void process_args(int argc, char **argv) {
     }
 }
 
+int run_cli(void){
+struct dmmr_server* server = new_dmmr_server(&cfg);
+    if (!server) {
+        fprintf(stderr, "Falha ao criar o servidor\n");
+        exit(EOF);
+    }
+    (void)server->run();
+    server->stop();
+    free_dmmr_server(server);
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    __mset(&cfg, 0, sizeof(struct cfg_daemon_server));
+    process_args(argc, argv);
+    if(!(cfg.daemonize))
+        return run_cli();
     int pid = fork();
     switch (pid) {
         case 0:
         {
-            __mset(&cfg, 0, sizeof(struct cfg_daemon_server));
-            process_args(argc, argv);
             struct dmmr_server* server = new_dmmr_server(&cfg);
             if (!server) {
                 fprintf(stderr, "Falha ao criar o servidor\n");
