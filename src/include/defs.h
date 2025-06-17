@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <pthread.h>
 #include <netinet/in.h>
 #include <sys/errno.h>

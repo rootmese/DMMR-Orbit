@@ -1,3 +1,9 @@
+#include <stdio.h>
+
+#include <__mset.h>
+#include <__mset.h>
+#include <__vcpy.h>
+
 #include <socket_tcp.h>
 
 static struct tcp_node *tcp_pool = 0;
@@ -15,13 +21,13 @@ static struct node *get_node(void){
     for (; p < p1; ++p)
         if (!(p->fd))
             return p;
-    if(n_buffer_count >= n_buffer_size) {
+    if(node_pool_count >= node_pool_size) {
         node_pool_size *= 2;
         node_pool = (struct node*)realloc(node_pool, node_pool_size * sizeof(struct node));
         if(!node_pool)
             return 0;
     }
-    return node_pool + n_buffer_count++;
+    return node_pool + node_pool_count++;
 }
 
 int tcp_send_to_client(struct node *n,  size_t n_len) {
@@ -32,7 +38,7 @@ int tcp_send_to_client(struct node *n,  size_t n_len) {
     do {
         iov[0].iov_base = n0->value;
         iov[0].iov_len = n0->value_size;
-        ssize_t sent = writev(n0->fd, &iov, 1);
+        ssize_t sent = writev(n0->fd, iov, 1);
         if (sent < 0) {
             switch(errno) {
                 case EAGAIN:
@@ -77,8 +83,8 @@ static void* tcp_receiver_thread(void *arg) {
             }
             clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
             clock_gettime(CLOCK_REALTIME, &ts_realtime);
-            n->node.arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
-            n->node.deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
+            n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
+            n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
             if(tn->on_receive_cb)
                 tn->on_receive_cb(n);
     } while(tn->run);
@@ -106,12 +112,17 @@ static void *accept_thread(void *arg) {
         if(ret <= 0)
             continue;
         if(FD_ISSET(node->node_cfg.fd, &readfds)) {
-            int client_fd = accept
-                (
-                    node->node_cfg.fd,
-                    ((node->node_cfg.family == AF_INET) ? ((struct sockaddr*)&client_addr) : ((struct sockaddr_in6*)&client_addr_v6)),
-                    ((node->node_cfg.family == AF_INET6) ? (&addr_len) : (&addr_len_v6))
-                 );
+            int client_fd = accept(
+                node->node_cfg.fd,
+                (struct sockaddr *)(
+                    (node->node_cfg.family == AF_INET)
+                        ? (void *)&client_addr
+                        : (void *)&client_addr_v6
+                ),
+                (node->node_cfg.family == AF_INET)
+                    ? &addr_len
+                    : &addr_len_v6
+            );
             if(client_fd < 0) {
                 if(node->run)
                     continue;
@@ -130,14 +141,14 @@ static void *accept_thread(void *arg) {
                     n->port = ntohs(a->sin6_port);
                     __vcpy(&(n->ipv6), &(a->sin6_addr), sizeof(struct in6_addr));
                 }
-                n->run = !0;
                 struct tcp_node *tn = get_tcp_node();
                 if(tn){
                     tn->parent = node;
                     tn->node = n;
                     tn->node_count++;
+                    tn->run = !0;
                     tn->on_receive_cb = node->on_receive_cb;
-                    (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
+                    (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
                     if(node->on_accept_cb)
                         node->on_accept_cb(tn);
                 }
@@ -149,46 +160,51 @@ static void *accept_thread(void *arg) {
 
 int connect_tcp_server(struct tcp_node *node){
     int ret;
+    int sock;
     struct sockaddr_in client_addr;
     struct sockaddr_in6 client_addr_v6;
     socklen_t addr_len = sizeof(client_addr);
     socklen_t addr_len_v6 = sizeof(client_addr_v6);
-    if(node){
-        int sock;
-        sock = node->node_cfg.fd = socket(((node->node_cfg.family == AF_INET) ? (AF_INET) : (AF_INET6)), SOCK_STREAM, 0);
-        if(sock == EOF)
+
+    if (node) {
+        sock = node->node_cfg.fd = socket(((node->node_cfg.family == AF_INET) ? AF_INET : AF_INET6), SOCK_STREAM, 0);
+        if (sock == EOF)
             goto return_error;
-        ret = connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
-        if(ret)
+        ret = connect(sock, (struct sockaddr *)&node->node_cfg.ipv4, sizeof(node->node_cfg.ipv4));
+        if (ret)
             goto return_close_socket_error;
+
         struct node *n = get_node();
-        if(n){
-         n->fd = sock;
-        if (node->node_cfg.family == AF_INET) {
-            n->port = ntohs(client_addr.sin_port);
-            __vcpy(&(n->ipv4), &(client_addr.sin_addr), sizeof(struct in_addr));
+        if (n) {
+            n->fd = sock;
+            if (node->node_cfg.family == AF_INET) {
+                n->port = ntohs(client_addr.sin_port);
+                __vcpy(&(n->ipv4), &(client_addr.sin_addr), sizeof(struct in_addr));
+            } else {
+                struct sockaddr_in6 *a = &client_addr_v6;
+                n->port = ntohs(a->sin6_port);
+                __vcpy(&(n->ipv6), &(a->sin6_addr), sizeof(struct in6_addr));
+            }
+            struct tcp_node *tn = get_tcp_node();
+            if (tn) {
+                tn->node = n;
+                tn->node_count++;
+                tn->run = !0;
+                tn->on_receive_cb = node->on_receive_cb;
+                (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
+                if (node->on_accept_cb)
+                    node->on_accept_cb(tn);
+            }
         }
-        else {
-            struct sockaddr_in6 *a = &client_addr_v6;
-            n->port = ntohs(a->sin6_port);
-            __vcpy(&(n->ipv6), &(a->sin6_addr), sizeof(struct in6_addr));
-        }
-        n->run = !0;
-        struct tcp_node *tn = get_tcp_node();
-        if(tn){
-            tn->node = n;
-            tn->node_count++;
-            tn->on_receive_cb = node->on_receive_cb;
-            (void)pthread_create(&tn->thread, 0, tcp_receiver_thread, tn);
-            if(node->on_accept_cb)
-                node->on_accept_cb(tn);
-        }
-     }
-     return_close_socket_error:
-        close(sockfd);
-    return_error:
-        return EOF;
+    return 0;
+    }
+
+return_close_socket_error:
+    close(sock);
+return_error:
+    return EOF;
 }
+
 
 struct tcp_node *get_tcp_node(void) {
     register struct tcp_node *p = tcp_pool;
@@ -213,60 +229,81 @@ void delete_tcp_node(struct tcp_node *node) {
             delete_tcp_node(p);
     node->parent = 0;
     sleep(1);
-    memset(node, 0, sizeof(struct tcp_node));
+    __mset(node, 0, sizeof(struct tcp_node));
 }
 
 int start_tcp_service(struct tcp_node *node) {
     int sock;
     int ret;
-    if(node){
-        sock = node->node_cfg.fd = socket(((node->node_cfg.family == AF_INET) ? (AF_INET) : (AF_INET6)), SOCK_STREAM, 0);
-        if(sock == EOF)
+
+    if (node) {
+        sock = node->node_cfg.fd = socket(
+            (node->node_cfg.family == AF_INET) ? AF_INET : AF_INET6,
+            SOCK_STREAM,
+            0
+        );
+        if (sock == EOF)
             goto return_error;
+
         int flags = fcntl(node->node_cfg.fd, F_GETFL, 0);
         ret = fcntl(node->node_cfg.fd, F_SETFL, flags | O_NONBLOCK);
-        if(ret)
+        if (ret)
             goto return_socket_error;
+
         int opt = 1;
         ret = setsockopt(node->node_cfg.fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        if(ret)
+        if (ret)
             goto return_socket_error;
-        switch(node->node_cfg.family){
-            case AF_INET:{
-                ret = bind(node->node_cfg.fd, (struct sockaddr*)&(node->node_cfg.ipv4), sizeof(server_addr));
-                if(ret)
+
+        switch (node->node_cfg.family) {
+            case AF_INET:
+                ret = bind(
+                    node->node_cfg.fd,
+                    (struct sockaddr *)&(node->node_cfg.ipv4),
+                    sizeof(struct sockaddr_in)
+                );
+                if (ret)
                     goto return_socket_error;
-            }
                 break;
-            case AF_INET6:{
-                ret = bind(node->node_cfg.fd, (struct sockaddr_in6*)&(node->node_cfg.ipv6), sizeof(server_addr));
-                if(ret)
+
+            case AF_INET6:
+                ret = bind(
+                    node->node_cfg.fd,
+                    (struct sockaddr *)&(node->node_cfg.ipv6),
+                    sizeof(struct sockaddr_in6)
+                );
+                if (ret)
                     goto return_socket_error;
-            }
                 break;
         }
-        ret = listen(node->node_cfg.fd, 64));
-        if(ret)
+
+        ret = listen(node->node_cfg.fd, 64);
+        if (ret)
             goto return_socket_error;
+
         node->run = !0;
+
         ret = pthread_create(&node->accept_thread, 0, accept_thread, node);
-        if(ret) {
+        if (ret) {
             close(node->node->fd);
             return EOF;
         }
+
         return 0;
     }
-    return_socket_error:
-        close(sock);
-    return_error:
-        return EOF;
+
+return_socket_error:
+    close(sock);
+return_error:
+    return EOF;
 }
+
 
 void disconnect_tcp_server(struct tcp_node *node){
     if(node){
         node->run = 0;
         sleep(1);
-        memset(tcp_node, 0, sizeof(struct tcp_node));
+        __mset(node, 0, sizeof(struct tcp_node));
     }
 }
 
@@ -285,7 +322,7 @@ int start_tcp_socket(void) {
 }
 
 void stop_tcp_socket(void) {
-    struct tcp_node *p = tcp_pool; *p1 = p + tcp_pool_size;
+    struct tcp_node *p = tcp_pool, *p1 = p + tcp_pool_size;
     do{
         if(p)
             p->run = 0;

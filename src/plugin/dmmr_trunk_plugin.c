@@ -47,7 +47,7 @@ static void on_acception_connection_udp_cb(struct udp_node *input) {
                 if (!ret) {
                     sm->set_socket_dispatch_cb_udp(on_dispatch_connection_udp_cb);
                     sm->set_socket_dispatch_cb_tcp(on_dispatch_connection_tcp_cb);
-                    sm->create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
+                    sm->socket_create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
                 }
             }
         }
@@ -66,7 +66,7 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input) {
                 if (!ret) {
                     sm->set_socket_dispatch_cb_udp(on_dispatch_connection_udp_cb);
                     sm->set_socket_dispatch_cb_tcp(on_dispatch_connection_tcp_cb);
-                    sm->create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
+                    sm->socket_create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
                 }
             }
         }

@@ -11,7 +11,7 @@ struct dmmr_socket{
 	int (*start_accept_from_uri)(const unsigned char*);
 	void (*set_acception_cb_tcp)(struct tcp_node*);
 	void (*set_acception_cb_udp)(struct udp_node*);
-	void (*reload)(struct cfg_server_server*);
+	void (*reload)(void);
 };
 
 struct dmmr_socket *new_dmmr_socket(struct dmmr_circle_buffer*, struct cfg_server_server*);
