@@ -3,8 +3,10 @@
 
 #include <__mset.h>
 #include <__bcpy.h>
+#include <__vcpy.h>
 #include <__node_cmp.h>
 #include <get_session_node.h>
+#include <update_session_counter.h>
 
 #include <session_connection.h>
 
@@ -59,6 +61,20 @@ static inline void sort_pool_by_arrival_inline(struct node *v, size_t c) {
     }
 }
 
+static inline uint16_t get_session_size(struct session_connection_pool *p) {
+    if(p){
+        struct node *n = p->pool, *n1 = n + p->pool_count;
+        uint16_t total = 0;
+        if(p->pool_count)
+            do {
+                total += n->value_size;
+            } while(++n < n1);
+        return total;
+    }
+    else
+        return 0;
+}
+
 static inline void process_session_node(struct session_connection_pool *conn) {
     if (!(node_cmp(&(conn->cursor->n), get_session_node(&(conn->session))))) {
         *(conn->pool + conn->pool_count) = conn->cursor->n;
@@ -72,12 +88,12 @@ static inline void process_session_node(struct session_connection_pool *conn) {
                 ++count;
             } while (siz <= 9000 && ++n < n0);
             if (snd_cb)
-                snd_cb(conn->session, conn->pool, count);
+                snd_cb(&(conn->session), conn->pool, count);
             if (count <= conn->pool_count) {
                 pthread_mutex_lock(&conn->mutex);
                 __bcpy(conn->pool + count, conn->pool, (conn->pool_count - count) * sizeof(struct node));
                 conn->pool_count -= count;
-                update_session_counter(conn->session);
+                update_session_counter(&(conn->session));
                 sort_pool_by_arrival_inline(conn->pool, conn->pool_count);
                 pthread_mutex_unlock(&conn->mutex);
             }
@@ -85,20 +101,6 @@ static inline void process_session_node(struct session_connection_pool *conn) {
                 conn->pool_count = 0;
         }
     }
-}
-
-static inline uint16_t get_session_size(struct session_connection_pool *p) {
-    if(p){
-        struct node *n = p->pool, *n1 = n + p->pool_count;
-        uint16_t total = 0;
-        if(p->pool_count)
-            do {
-                total += n->value_size;
-            } while(++n < n1);
-        return total;
-    }
-    else
-        return 0;
 }
 
 static void* session_worker(void* arg) {
@@ -152,38 +154,30 @@ int insert_session(struct session_connection_pool *session) {
     session->run = !0;
     session->cursor = circle_buffer->get_current_node();
     pthread_mutex_init(&session->mutex, NULL);
-    (void)pthread_create(&session->pool->thread, 0, session_worker, session);
+    (void)pthread_create(&session->thread, 0, session_worker, session);
     return 0;
 }
 
-void delete_session(struct session_connection_pool *session){
-    if(session){
-        session->run = 0;
-        sleep(1);
-        pthread_mutex_destroy(&(session->mutex));
+void delete_session(struct session_connection_pool *p, int do_sleep){
+    if (p) {
+        pthread_mutex_t m;
+        __vcpy(&m,&(p->mutex), sizeof(pthread_mutex_t));
+        p->run = 0;
+        if (do_sleep)
+            sleep(1);
+        if (p->pool)
+            free(p->pool);
+        __mset(p, 0, sizeof(struct session_connection_pool));
+        pthread_mutex_destroy(&m);
     }
 }
 
-int reload_session_conection(uint16_t port){
+int reload_session_conection(void){
     return 0;
 }
 
 void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size)){
     snd_cb = send_cb;
-}
-
-void stop_session_connection(struct session_connection_pool *p, int sleep) {
-    if(p){
-        static pthread_mutex_t m;
-        p->run = 0;
-        if(sleep)
-            sleep(1);
-        if(p->pool)
-            free(p->pool);
-        m = p->mutex;
-        __mset(p, 0, sizeof(struct session_connection_pool));
-        pthread_mutex_destroy(&m);
-    }
 }
 
 int start_session_connection(struct dmmr_circle_buffer *__cb){
@@ -205,7 +199,7 @@ void stop_session_connection(void){
         struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_count;
         for (; p < p1; ++p)
             if(!(p->pool && p->pool->run))
-                stop_session_connection(p, 0);
+                delete_session(p->pool, 0);
         sleep(1);
         free(recno);
         recno = 0;

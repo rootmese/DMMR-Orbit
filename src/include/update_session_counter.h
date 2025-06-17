@@ -8,18 +8,18 @@ static inline void update_session_counter(union protocol_base_cb *__u){
             case proto_udp_t:{
                 unsigned s = 0;
                 struct udp_node *p = &(__u->udp);
-                struct node *n = p->node, *n0 = n + node_count;
+                struct node *n = p->node, *n0 = n + p->node_count;
                 for(; n < n0; ++n)
-                    s += value_size;
+                    s += n->value_size;
                 p->node_count = s;
             }
                 break;
-            case proto_tcp_t{
+            case proto_tcp_t:{
                 unsigned s = 0;
                 struct tcp_node *p = &(__u->tcp);
-                struct node *n = p->node, *n0 = n + node_count;
+                struct node *n = p->node, *n0 = n + p->node_count;
                 for(; n < n0; ++n)
-                    s += value_size;
+                    s += n->value_size;
                 p->node_count = s;
             }
                 break;

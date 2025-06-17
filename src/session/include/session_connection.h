@@ -6,13 +6,13 @@
 
 int start_session_connection(struct dmmr_circle_buffer*);
 
-void stop_session_connection(struct session_connection_pool*, int);
+void stop_session_connection(void);
 
-int reload_session_conection(uint16_t); //não será contemplado no MVC
+int reload_session_conection(void); //não será contemplado no MVC
 
 int insert_session(struct session_connection_pool*);
 
-void delete_session(struct session_connection_pool*);
+void delete_session(struct session_connection_pool*, int);
 
 void session_connection_trigger_send(void *ptr);
 

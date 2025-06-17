@@ -19,7 +19,7 @@ union protocol_base_cb *get_union_protocol_base_cb(void) {
     register union protocol_base_cb *p = cap;
     register union protocol_base_cb *p1 = cap + cap_size;
     for (; p < p1; ++p)
-        if (!(p->run))
+        if (!(p->none.proto))
             return p;
     if(cap_count >= cap_size) {
         cap_size *= 2;
