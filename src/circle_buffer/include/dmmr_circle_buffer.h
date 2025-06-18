@@ -7,7 +7,7 @@ TAILQ_HEAD(tailq_fifo, node_fifo_buffer);
 CIRCLEQ_HEAD(circleq_head, node_circle_buffer);
 
 struct node_fifo_buffer {
-    struct node n;
+    struct node *n;
     TAILQ_ENTRY(node_fifo_buffer) tailq;
 };
 

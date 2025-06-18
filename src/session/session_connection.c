@@ -16,6 +16,8 @@ struct session_connection_pool_recno{
     struct session_connection_pool *pool;
 };
 
+static pthread_mutex_t session_connection_pool_mutex;
+
 static struct dmmr_circle_buffer *circle_buffer = 0;
 
 static unsigned session_connection_pool_recno_count = 0;
@@ -30,21 +32,35 @@ static inline int is_cursor_safe(struct dmmr_circle_buffer *cb, struct node_circ
     return (!(cur == cb->cursor));
 }
 
+
 struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
     register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
     for (; p < p1; ++p)
         if(!(p->pool && p->pool->run)){
-            __mset(p, 0, sizeof(struct session_connection_pool_recno));
             return p->pool;
         }
     if (session_connection_pool_recno_count >= session_connection_pool_recno_size) {
+        pthread_mutex_lock(&session_connection_pool_mutex);
         session_connection_pool_recno_size *= 2;
         recno = (struct session_connection_pool_recno*)realloc(recno, session_connection_pool_recno_size * sizeof(struct session_connection_pool_recno));
-        if (!recno)
+        if (!recno){
+            pthread_mutex_unlock(&session_connection_pool_mutex);
             return 0;
+        }
     }
-    return (recno + session_connection_pool_recno_count++)->pool;
+    pthread_mutex_lock(&session_connection_pool_mutex);
+    struct session_connection_pool *ret = (recno + session_connection_pool_recno_count++)->pool;
+    pthread_mutex_unlock(&session_connection_pool_mutex);
+    return ret;
+}
+
+void delete_recno_slot(struct session_connection_pool *p){
+    if(p){
+    pthread_mutex_lock(&session_connection_pool_mutex);
+    __mset(p, 0, sizeof(struct session_connection_pool));
+    pthread_mutex_unlock(&session_connection_pool_mutex);
+    }
 }
 
 static inline void sort_pool_by_arrival_inline(struct node *v, size_t c) {
@@ -183,6 +199,7 @@ int start_session_connection(struct dmmr_circle_buffer *__cb){
             return EOF;
         session_connection_pool_recno_size = 0x400;
         circle_buffer = __cb;
+        pthread_mutex_init(&session_connection_pool_mutex, 0);
         return 0;
     }
 }
@@ -199,5 +216,6 @@ void stop_session_connection(void){
         recno = 0;
         session_connection_pool_recno_size = 0;
         session_connection_pool_recno_count = 0;
+        pthread_mutex_destroy(&session_connection_pool_mutex);
     }
 }

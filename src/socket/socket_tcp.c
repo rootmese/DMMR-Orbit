@@ -15,7 +15,11 @@ static struct node *node_pool = 0;
 static unsigned node_pool_size = 0;
 static unsigned node_pool_count = 0;
 
-//TODO Faltam mutex no código
+static pthread_mutex_t node_mutex;
+
+static pthread_mutex_t tcp_node_mutex;
+
+//TODO Verificar um freelock, getnode é usado para iniciar uma conexão.
 static struct node *get_node(void){
     register struct node *p = node_pool;
     register struct node *p1 = node_pool + node_pool_size;
@@ -23,12 +27,51 @@ static struct node *get_node(void){
         if (!(p->fd))
             return p;
     if(node_pool_count >= node_pool_size) {
+        pthread_mutex_lock(&node_mutex);
         node_pool_size *= 2;
         node_pool = (struct node*)realloc(node_pool, node_pool_size * sizeof(struct node));
-        if(!node_pool)
+        if(!node_pool){
+            pthread_mutex_unlock(&node_mutex);
             return 0;
+        }
     }
-    return node_pool + node_pool_count++;
+    struct node *ret =  node_pool + node_pool_count++;
+    pthread_mutex_unlock(&node_mutex);
+    return ret;
+}
+
+static struct node *delete_node(struct node *p){
+    if(p){
+        pthread_mutex_lock(&node_mutex);
+        __mset(p, 0, sizeof(struct node));
+        pthread_mutex_unlock(&node_mutex);
+    }
+}
+
+struct tcp_node *get_tcp_node(void) {
+    register struct tcp_node *p = tcp_pool;
+    register struct tcp_node *p1 = tcp_pool + tcp_pool_size;
+    for (; p < p1; ++p)
+        if (!(p->run))
+            return p;
+    pthread_mutex_lock(&tcp_node_mutex);
+    if(tcp_pool_count >= tcp_pool_size) {
+        tcp_pool_size *= 2;
+        tcp_pool = (struct tcp_node*)realloc(tcp_pool, tcp_pool_size * sizeof(struct tcp_node));
+        if(!tcp_pool){
+            pthread_mutex_unlock(&tcp_node_mutex);
+            return 0;
+        }
+    }
+    struct tcp_node *ret = tcp_pool + tcp_pool_count++;
+    pthread_mutex_unlock(&tcp_node_mutex);
+    return ret;
+}
+
+void delete_tcp_node(struct tcp_node *node) {
+    pthread_mutex_lock(&tcp_node_mutex);
+    __mset(node, 0, sizeof(struct tcp_node));
+    pthread_mutex_unlock(&tcp_node_mutex);
 }
 
 int tcp_send_to_client(struct node *n,  size_t n_len) {
@@ -54,13 +97,14 @@ int tcp_send_to_client(struct node *n,  size_t n_len) {
 }
 
 static void* tcp_receiver_thread(void *arg) {
+    uint8_t pos;
     struct tcp_node *tn = (struct tcp_node *)arg;
     struct timespec ts_monotonic, ts_realtime;
     struct iovec iov[1];
     if(!tn)
         goto done;
     do {
-            struct node *n = get_free_node(&(tn->recv_manager));
+            struct node *n = get_free_node(&(tn->recv_manager), &pos);
             iov[0].iov_base = n->value;
             iov[0].iov_len = sizeof(n->value);
             n->value_size = readv(n->fd, iov, 1);
@@ -69,6 +113,7 @@ static void* tcp_receiver_thread(void *arg) {
                     switch (errno) {
                         case EAGAIN:
                         case EINTR:
+                            recicle_node(&(tn->recv_manager), pos);
                             continue; // Erro temporário, continua
                         case EPIPE:
                         case ECONNRESET:
@@ -82,15 +127,13 @@ static void* tcp_receiver_thread(void *arg) {
                     goto done;
                 }
             }
-            clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
-            clock_gettime(CLOCK_REALTIME, &ts_realtime);
-            n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
-            n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
             if(tn->on_receive_cb)
                 tn->on_receive_cb(&(tn->recv_manager));
     } while(tn->run);
 
 done:
+    if(tn->node);
+        delete_node(tn->node);
     return 0;
 }
 
@@ -208,33 +251,6 @@ return_error:
     return EOF;
 }
 
-
-struct tcp_node *get_tcp_node(void) {
-    register struct tcp_node *p = tcp_pool;
-    register struct tcp_node *p1 = tcp_pool + tcp_pool_size;
-    for (; p < p1; ++p)
-        if (!(p->run))
-            return p;
-    if(tcp_pool_count >= tcp_pool_size) {
-        tcp_pool_size *= 2;
-        tcp_pool = (struct tcp_node*)realloc(tcp_pool, tcp_pool_size * sizeof(struct tcp_node));
-        if(!tcp_pool)
-            return 0;
-    }
-    return tcp_pool + tcp_pool_count++;
-}
-
-void delete_tcp_node(struct tcp_node *node) {
-    if (!node)
-        return;
-    for (struct tcp_node *p = tcp_pool, *end = tcp_pool + tcp_pool_size; p < end; ++p)
-        if (p->run && p->parent == node)
-            delete_tcp_node(p);
-    node->parent = 0;
-    sleep(1);
-    __mset(node, 0, sizeof(struct tcp_node));
-}
-
 int start_tcp_service(struct tcp_node *node) {
     int sock;
     int ret;
@@ -321,6 +337,8 @@ int start_tcp_socket(void) {
         return EOF;
     }
     node_pool_size = 0x400;
+    pthread_mutex_init(&node_mutex, 0);
+    pthread_mutex_init(&tcp_node_mutex, 0);
     return 0;
 }
 
@@ -333,5 +351,7 @@ void stop_tcp_socket(void) {
     sleep(1);
     if(tcp_pool)
         free(tcp_pool);
+    pthread_mutex_destroy(&node_mutex);
+    pthread_mutex_destroy(&tcp_node_mutex);
 }
 

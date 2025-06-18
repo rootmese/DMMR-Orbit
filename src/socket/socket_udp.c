@@ -4,6 +4,7 @@
 #include <defs.h>
 #include <__mset.h>
 #include <__vcpy.h>
+#include <node_recv_manager.h>
 
 #include <socket_udp.h>
 
@@ -18,23 +19,6 @@ static unsigned udp_pool_count = 0;
 
 static void(*dispatcher_udp_cb)(union protocol_base_cb*) = 0;
 
-struct udp_node *get_udp_node(void) {
-    register struct udp_node *p = udp_pool;
-    register struct udp_node *p1 = udp_pool + udp_pool_size;
-    for (; p < p1; ++p)
-        if (!(p->run))
-            return p;
-
-    if (udp_pool_count >= udp_pool_size) {
-        udp_pool_size *=  2;
-        udp_pool = (struct udp_node*)realloc(udp_pool, udp_pool_size * sizeof(struct udp_node));
-        if (!udp_pool)
-            return 0;
-    }
-
-    return udp_pool + udp_pool_count++;
-}
-
 static void* receiver_thread(void* arg) {
     struct udp_node *node = (struct udp_node*)arg;
     (void)init_node_recv_manager(&(node->recv_manager));
@@ -45,7 +29,8 @@ static void* receiver_thread(void* arg) {
     } client_addr_storage;
 
     do {
-        struct node *n =  get_free_node(&(node->recv_manager));
+        uint8_t pos;
+        struct node *n =  get_free_node(&(node->recv_manager), &pos);
         struct iovec iov[1] = {
             { .iov_base = n->value, .iov_len = sizeof(n->value) }
         };
@@ -87,7 +72,7 @@ static void* receiver_thread(void* arg) {
         n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
 
         if (node->on_receive_cb)
-            node->on_receive_cb(n);
+            node->on_receive_cb(&(node->recv_manager));
 
     } while (node->run);
 

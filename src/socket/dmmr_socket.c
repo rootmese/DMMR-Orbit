@@ -10,12 +10,13 @@
 #include <dmmr_socket.h>
 #include <socket_tcp.h>
 #include <socket_udp.h>
+#include <node_recv_manager.h>
 
 static union protocol_base_cb *cap = 0;
 static uint32_t cap_size = 0;
 static uint32_t cap_count = 0;
 
-static struct node_buffer *nbuff = 0;
+static struct node_fifo_buffer *nbuff = 0;
 static uint32_t nbuff_size = 0;
 static uint32_t nbuff_count = 0;
 
@@ -32,17 +33,17 @@ static void (*on_accept_cb_tcp)(struct tcp_node*) = 0;
 
 static void (*on_receive_cb)(struct node*) = 0;
 
-struct node_buffer *get_struct_node_buffer(void) {
-    register struct node_buffer *p = nbuff;
-    register struct node_buffer *p1 = p + nbuff_size;
+struct node_fifo_buffer *get_struct_node_buffer(void) {
+    register struct node_fifo_buffer *p = nbuff;
+    register struct node_fifo_buffer *p1 = p + nbuff_size;
     for (; p < p1; ++p)
         if(!(p->n)){
-            __mset(p, 0, sizeof(struct node_buffer));
+            __mset(p, 0, sizeof(struct node_fifo_buffer));
             return p;
         }
     if (nbuff_count >= nbuff_size) {
         nbuff_size *= 2;
-        nbuff = (struct node_buffer*)realloc(nbuff, nbuff_size * sizeof(struct node_buffer));
+        nbuff = (struct node_fifo_buffer*)realloc(nbuff, nbuff_size * sizeof(struct node_fifo_buffer));
         if (!nbuff)
             return 0;
     }
@@ -65,23 +66,18 @@ union protocol_base_cb *get_union_protocol_base_cb(void) {
 }
 
 static void on_receive_connection_cb(struct node_recv_manager *nrm){
-    if(n){
+    if(nrm){
         unsigned count;
         struct node *n;
-        struct node_buffer *nb = 0;
-        pthread_mutex_lock(&(nrm->mutex));
-        unsigned pos = 0;
+        struct node_fifo_buffer *nb = 0;
         nb = get_struct_node_buffer();
-        do{
-            n = copy_buffer(nrm, nb, &pos);
-            if(n){
-                pthread_mutex_lock(&(circle_buffer->fifo));
-                TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
-                pthread_mutex_unlock(&(circle_buffer->fifo));
-            }
-            else
-                break;
-        }while(!0);
+        pthread_mutex_lock(&(nrm->mutex));
+        uint8_t pos = 0;
+        while(n = get_buzy_node(nrm, &pos)){
+            pthread_mutex_lock(&(circle_buffer->fifo_lock));
+            TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
+            pthread_mutex_unlock(&(circle_buffer->fifo_lock));
+        };
         pthread_mutex_unlock(&(nrm->mutex));
     }
 }
@@ -263,7 +259,7 @@ struct dmmr_socket *new_dmmr_socket(struct dmmr_circle_buffer* __circle_buffer, 
         cap = (union protocol_base_cb*)calloc(0x400, sizeof(union protocol_base_cb));
         if(cap){
             cap_size = 0x400;
-            nbuff = (struct node_buffer*)calloc(0x400, sizeof(struct node_buffer));
+            nbuff = (struct node_fifo_buffer*)calloc(0x400, sizeof(struct node_fifo_buffer));
             if(nbuff){
                 nbuff_size = 0x400;
                 p->dispatcher = dispatcher;
