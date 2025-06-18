@@ -2,6 +2,8 @@
 
 #include <__vcpy.h>
 
+#include <dmmr_sleep.h>
+
 #include <dmmr_circle_buffer.h>
 
 static struct dmmr_circle_buffer *this = 0;
@@ -12,12 +14,24 @@ static struct node_circle_buffer* buffer = 0;
 
 static int run = 0;
 
+static struct node_circle_buffer* get_current_node(void) {
+    if(this){
+        struct node_circle_buffer* current = this->cursor;
+        this->cursor = CIRCLEQ_NEXT(current, circleq);
+        if (this->cursor == CIRCLEQ_LAST(&(this->head)))
+            this->cursor = CIRCLEQ_FIRST(&(this->head));
+        return current;
+    }
+    else
+        return 0;
+}
+
 static void* fifo_worker(void* arg) {
-    const int MAX_BATCH = 0x20; //valor será caso de estudo, tuning via compilação
+    const int MAX_BATCH = 0x100; //valor será caso de estudo, tuning via compilação
     struct node_circle_buffer* slot = 0;
-    struct node_buffer* *batch_ptr = 0;
-    struct node_buffer* batch[MAX_BATCH];
-    struct node_buffer** b = batch;
+    struct node_fifo_buffer* *batch_ptr = 0;
+    struct node_fifo_buffer* batch[MAX_BATCH];
+    struct node_fifo_buffer** b = batch;
     do {
         b = batch;
         pthread_mutex_lock(&this->fifo_lock);
@@ -30,19 +44,12 @@ static void* fifo_worker(void* arg) {
         if (b != batch) {
             batch_ptr = batch;
             do {
-                slot = this->get_current_node();
+                slot = get_current_node();
                 if (slot && *batch_ptr)
                     __vcpy(slot, &(*batch_ptr)->n, sizeof(struct node));
             } while (++batch_ptr < b);
         }
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        ts.tv_nsec += 10000; // 10µs
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, 0);
+        NSLEEP_US(10);
     } while (run);
 
     return 0;
@@ -56,18 +63,6 @@ static struct node_circle_buffer *iterate(struct node_circle_buffer *cursor, str
         struct node_circle_buffer *next = CIRCLEQ_NEXT(cursor, circleq);
         return (next == (struct node_circle_buffer *)CIRCLEQ_LAST(head)) ? CIRCLEQ_FIRST(head) : next;
     }
-}
-
-static struct node_circle_buffer* get_current_node(void) {
-    if(this){
-        struct node_circle_buffer* current = this->cursor;
-        this->cursor = CIRCLEQ_NEXT(current, circleq);
-        if (this->cursor == CIRCLEQ_LAST(&(this->head)))
-            this->cursor = CIRCLEQ_FIRST(&(this->head));
-        return current;
-    }
-    else
-        return 0;
 }
 
 static int start(void){

@@ -3,6 +3,7 @@
 #include <defs.h>
 #include <parse_uri.h>
 #include <dns_utils.h>
+#include <dmmr_sleep.h>
 #include <__mset.h>
 #include <__vcpy.h>
 
@@ -63,14 +64,25 @@ union protocol_base_cb *get_union_protocol_base_cb(void) {
     return cap + cap_count++;
 }
 
-static void on_receive_connection_cb(struct node *n){
+static void on_receive_connection_cb(struct node_recv_manager *nrm){
     if(n){
-        // TODO verifcar lock
-        struct node_buffer *nb = get_struct_node_buffer();
-        __vcpy(&(nb->n), n, sizeof(struct node_buffer));
-        pthread_mutex_lock(&(circle_buffer->fifo_lock));
-        TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
-        pthread_mutex_unlock(&circle_buffer->fifo_lock);
+        unsigned count;
+        struct node *n;
+        struct node_buffer *nb = 0;
+        pthread_mutex_lock(&(nrm->mutex));
+        unsigned pos = 0;
+        nb = get_struct_node_buffer();
+        do{
+            n = copy_buffer(nrm, nb, &pos);
+            if(n){
+                pthread_mutex_lock(&(circle_buffer->fifo));
+                TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
+                pthread_mutex_unlock(&(circle_buffer->fifo));
+            }
+            else
+                break;
+        }while(!0);
+        pthread_mutex_unlock(&(nrm->mutex));
     }
 }
 

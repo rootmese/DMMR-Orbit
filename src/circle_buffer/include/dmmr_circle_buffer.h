@@ -3,12 +3,12 @@
 
 #include <defs.h>
 
-TAILQ_HEAD(tailq_fifo, node_buffer);
+TAILQ_HEAD(tailq_fifo, node_fifo_buffer);
 CIRCLEQ_HEAD(circleq_head, node_circle_buffer);
 
-struct node_buffer {
-    struct node *n;
-    TAILQ_ENTRY(node_buffer) tailq;
+struct node_fifo_buffer {
+    struct node n;
+    TAILQ_ENTRY(node_fifo_buffer) tailq;
 };
 
 struct node_circle_buffer {

@@ -69,6 +69,16 @@ struct node {
     uint8_t value[1420];
 };
 
+struct node_buffer{
+	uint8_t node_buffer_status;
+	struct node node;
+};
+
+struct node_recv_manager{
+	struct node_buffer buffer[0x100];
+	pthread_mutex_t mutex;
+};
+
 
 struct none_node{
     proto_t proto;
@@ -77,31 +87,35 @@ struct none_node{
 struct tcp_node {
     proto_t proto;
     uint8_t run;
-    uint8_t origin;            // 0x3 = tcp[0], 0x4 = tcp[1]
-    uint8_t __filler0[2];      // alinhamento
+    uint8_t origin;
+    uint8_t __filler0[2];
     uint32_t node_count;
     uint32_t __filler1;
     struct node *node;
     struct node node_cfg;
     pthread_t accept_thread;
     struct tcp_node *parent;
+    struct node_recv_manager recv_manager;
     void (*on_accept_cb)(struct tcp_node*);
-    void (*on_receive_cb)(struct node*);
+    void (*on_receive_cb)(struct node_recv_manager*);
 };
+
 
 struct udp_node {
     proto_t proto;
     uint8_t run;
-    uint8_t origin;            // 0x1 = udp[0], 0x2 = udp[1]
-    uint8_t __filler0[2];      // alinhamento
+    uint8_t origin;
+    uint8_t __filler0[2];
     uint32_t node_count;
     uint32_t __filler1;
     struct node *node;
     struct node node_cfg;
     pthread_t accept_thread;
+    struct node_recv_manager recv_manager;
     void (*on_accept_cb)(struct udp_node*);
-    void (*on_receive_cb)(struct node*);
-}; 
+    void (*on_receive_cb)(struct node_recv_manager*);
+};
+
 
 union protocol_base_cb{
     struct none_node none;
@@ -112,6 +126,7 @@ union protocol_base_cb{
 
 struct cfg_daemon_server {
     uint8_t  cfg_file[0x400];
+    uint8_t daemonize;
 };
 
 struct cfg_server_server{

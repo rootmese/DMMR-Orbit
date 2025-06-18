@@ -37,6 +37,7 @@ struct udp_node *get_udp_node(void) {
 
 static void* receiver_thread(void* arg) {
     struct udp_node *node = (struct udp_node*)arg;
+    (void)init_node_recv_manager(&(node->recv_manager));
     struct timespec ts_monotonic, ts_realtime;
     union {
         struct sockaddr_in ipv4;
@@ -44,7 +45,7 @@ static void* receiver_thread(void* arg) {
     } client_addr_storage;
 
     do {
-        struct node *n = node->node;
+        struct node *n =  get_free_node(&(node->recv_manager));
         struct iovec iov[1] = {
             { .iov_base = n->value, .iov_len = sizeof(n->value) }
         };

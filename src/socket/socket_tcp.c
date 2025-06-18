@@ -5,6 +5,7 @@
 #include <__vcpy.h>
 
 #include <socket_tcp.h>
+#include <node_recv_manager.h>
 
 static struct tcp_node *tcp_pool = 0;
 static unsigned tcp_pool_size = 0;
@@ -59,7 +60,7 @@ static void* tcp_receiver_thread(void *arg) {
     if(!tn)
         goto done;
     do {
-            struct node *n = tn->node;
+            struct node *n = get_free_node(&(tn->recv_manager));
             iov[0].iov_base = n->value;
             iov[0].iov_len = sizeof(n->value);
             n->value_size = readv(n->fd, iov, 1);
@@ -86,7 +87,7 @@ static void* tcp_receiver_thread(void *arg) {
             n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
             n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
             if(tn->on_receive_cb)
-                tn->on_receive_cb(n);
+                tn->on_receive_cb(&(tn->recv_manager));
     } while(tn->run);
 
 done:
@@ -147,6 +148,7 @@ static void *accept_thread(void *arg) {
                     tn->node = n;
                     tn->node_count++;
                     tn->run = !0;
+                    (void)init_node_recv_manager(&(tn->recv_manager));
                     tn->on_receive_cb = node->on_receive_cb;
                     (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
                     if(node->on_accept_cb)
@@ -190,6 +192,7 @@ int connect_tcp_server(struct tcp_node *node){
                 tn->node = n;
                 tn->node_count++;
                 tn->run = !0;
+                (void)init_node_recv_manager(&(tn->recv_manager));
                 tn->on_receive_cb = node->on_receive_cb;
                 (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
                 if (node->on_accept_cb)

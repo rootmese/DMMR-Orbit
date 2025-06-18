@@ -7,6 +7,7 @@
 #include <__node_cmp.h>
 #include <get_session_node.h>
 #include <update_session_counter.h>
+#include <dmmr_sleep.h>
 
 #include <session_connection.h>
 
@@ -121,7 +122,7 @@ static void* session_worker(void* arg) {
         }
         process_session_node(conn);
         if (!is_cursor_safe(circle_buffer, conn->cursor)) {
-            usleep(10);
+            NSLEEP_US(10);
             continue;
         }
         while (conn->cursor != circle_buffer->cursor->prev_ptr) {
@@ -129,14 +130,7 @@ static void* session_worker(void* arg) {
             conn->cursor = circle_buffer->iterate(conn->cursor, head);
         }
         conn->cursor = circle_buffer->iterate(conn->cursor, head);
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        ts.tv_nsec += 10000; // 10µs
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+        NSLEEP_US(10);
     } while (conn->run);
 
 return_fail:
