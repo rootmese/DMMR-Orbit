@@ -20,4 +20,6 @@ struct session_connection_pool *get_recno_slot(void);
 
 struct session_connection_pool *get_recno_slot(void);
 
+void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size));
+
 #endif

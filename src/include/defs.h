@@ -98,6 +98,7 @@ struct tcp_node {
     struct node_recv_manager recv_manager;
     void (*on_accept_cb)(struct tcp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
+    void (*on_close_cb)(struct tcp_node*); // TODO
 };
 
 
@@ -114,6 +115,7 @@ struct udp_node {
     struct node_recv_manager recv_manager;
     void (*on_accept_cb)(struct udp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
+    void (*on_close_cb)(struct udp_node*); // TODO
 };
 
 

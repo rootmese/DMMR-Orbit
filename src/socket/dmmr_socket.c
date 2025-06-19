@@ -40,7 +40,7 @@ static struct node_fifo_buffer *get_struct_node_buffer(void) {
     register struct node_fifo_buffer *p1 = p + nbuff_size;
     pthread_mutex_lock(&node_fifo_buffer_mutex);
     for (; p < p1; ++p)
-        if(!(p->n)){
+        if(!(p->n.fd)){
             pthread_mutex_unlock(&node_fifo_buffer_mutex);
             return p;
         }
@@ -57,12 +57,16 @@ static struct node_fifo_buffer *get_struct_node_buffer(void) {
     return ret;
 }
 
-static void delete_struct_node_buffer(struct node_fifo_buffer *p){
+static inline void __delete_struct_node_buffer(struct node_fifo_buffer *p){
     if(p){
         pthread_mutex_unlock(&node_fifo_buffer_mutex);
         __mset(p, 0, sizeof(struct node_fifo_buffer));
         pthread_mutex_unlock(&node_fifo_buffer_mutex);
     }
+} 
+
+static void delete_struct_node_buffer(struct node_fifo_buffer *p){
+    __delete_struct_node_buffer(p);
 } 
 
 static union protocol_base_cb *get_union_protocol_base_cb(void) {
@@ -105,25 +109,25 @@ static void on_receive_connection_cb(struct node_recv_manager *nrm){
         uint8_t pos = 0;
         while(n = get_buzy_node(nrm, &pos)){
             pthread_mutex_lock(&(circle_buffer->fifo_lock));
+            __vcpy(&(nb->n), n, sizeof(struct node));
             TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
             pthread_mutex_unlock(&(circle_buffer->fifo_lock));
         };
         pthread_mutex_unlock(&(nrm->mutex));
+        __delete_struct_node_buffer(nb);
     }
 }
 
 static inline void dispatcher_udp(struct node *n, unsigned nl){
-    if(n && nl)
-        (void)udp_send_to_client(n, nl);
+    (void)udp_send_to_client(n, nl);
 }
 
 static inline void dispatcher_tcp(struct node *n, unsigned nl){
-    if(n && nl)
-        (void)tcp_send_to_client(n, nl);
+    (void)tcp_send_to_client(n, nl);
 }
 
 static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
-    if(n){
+    if(n && nl){
         switch(u->none.proto){
             case proto_udp_t:
                 dispatcher_udp(n, nl);

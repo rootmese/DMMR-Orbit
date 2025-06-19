@@ -53,10 +53,12 @@ static struct node *delete_node(struct node *p){
 struct tcp_node *get_tcp_node(void) {
     register struct tcp_node *p = tcp_pool;
     register struct tcp_node *p1 = tcp_pool + tcp_pool_size;
+     pthread_mutex_lock(&tcp_node_mutex);
     for (; p < p1; ++p)
-        if (!(p->run))
+        if (!(p->run)){
+            pthread_mutex_unlock(&tcp_node_mutex);
             return p;
-    pthread_mutex_lock(&tcp_node_mutex);
+        }
     if(tcp_pool_count >= tcp_pool_size) {
         tcp_pool_size *= 2;
         tcp_pool = (struct tcp_node*)realloc(tcp_pool, tcp_pool_size * sizeof(struct tcp_node));
@@ -134,6 +136,8 @@ static void* tcp_receiver_thread(void *arg) {
     } while(tn->run);
 
 done:
+    if(tn->on_close_cb)
+        tn->on_close_cb(tn);
     if(tn->node);
         delete_node(tn->node);
     return 0;

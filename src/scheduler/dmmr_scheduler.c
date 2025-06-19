@@ -116,9 +116,9 @@ static void sched_trigger_snd(struct scheduler_connection* conn) {
 
 
 static void sched_snd(struct scheduler_connection* conn, struct node *n, unsigned s) {
-    unsigned siz = 0;
     if(!conn)
         return;
+    unsigned siz = 0;
     struct session_connection_pool* pool = conn->session_ptr;
     union protocol_base_cb *u = (&(pool->session));
     if (!pool || !u)
@@ -159,7 +159,7 @@ static int sched_start(void){
         pthread_attr_setschedparam(&attr, &param);
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
         pthread_mutex_init(&slots_mutex, 0);
-        pthread_create(&this->reorder_thread, &attr, _reorder_thread, this);
+        pthread_create(&this->reorder_thread, 0, _reorder_thread, this);
         pthread_create(&this->send_thread, &attr, _check_and_send_thread, this);
         return 0;
     }

@@ -14,24 +14,52 @@ static struct node_circle_buffer* buffer = 0;
 
 static int run = 0;
 
-static struct node_circle_buffer* get_current_node(void) {
+static inline struct node_circle_buffer* __get_current_node(void) {
     if(this){
         struct node_circle_buffer* current = this->cursor;
-        this->cursor = CIRCLEQ_NEXT(current, circleq);
-        if (this->cursor == CIRCLEQ_LAST(&(this->head)))
-            this->cursor = CIRCLEQ_FIRST(&(this->head));
         return current;
     }
     else
         return 0;
 }
 
+static struct node_circle_buffer* get_current_node(void) {
+    return get_current_node();
+}
+
+static inline int __is_behind_cursor(struct node_circle_buffer *cur) {
+    intptr_t a = (intptr_t)cur;
+    intptr_t b = (intptr_t)this->cursor;
+    intptr_t base = (intptr_t)buffer;
+    intptr_t end = (intptr_t)(buffer + cfg->circle_buffer_size);
+
+    if (a == b)
+        return 0; // tá em cima do cursor, não é seguro
+    else if (a < b)
+        return (b - a) < (end - base); // tá atrás, sem wrap
+    else
+        return ((end - a) + (b - base)) < (end - base); // wrap: tá atrás se a distância for < buffer
+}
+
+static inline int is_behind_cursor(struct node_circle_buffer *cur){
+    if(cur)
+        return __is_behind_cursor(cur);
+}
+
+static inline void foward_current_node(void){
+    if(this){
+        this->cursor = CIRCLEQ_NEXT(this->cursor, circleq);
+        if (this->cursor == CIRCLEQ_LAST(&(this->head)))
+            this->cursor = CIRCLEQ_FIRST(&(this->head));
+    }
+}
+
 static void* fifo_worker(void* arg) {
     const int MAX_BATCH = 0x400; //valor será caso de estudo, tuning via compilação
-    struct node_circle_buffer* slot = 0;
-    struct node_fifo_buffer* *batch_ptr = 0;
-    struct node_fifo_buffer* batch[MAX_BATCH];
-    struct node_fifo_buffer** b = batch;
+    struct node_circle_buffer *slot = 0;
+    struct node_fifo_buffer **batch_ptr = 0;
+    struct node_fifo_buffer *batch[MAX_BATCH];
+    struct node_fifo_buffer **b = batch;
     do {
         b = batch;
         pthread_mutex_lock(&this->fifo_lock);
@@ -44,9 +72,10 @@ static void* fifo_worker(void* arg) {
         if (b != batch) {
             batch_ptr = batch;
             do {
-                slot = get_current_node();
+                slot = __get_current_node();
                 if (slot && *batch_ptr)
                     __vcpy(slot, &(*batch_ptr)->n, sizeof(struct node));
+                foward_current_node(); // Avoid overrun in sessions
             } while (++batch_ptr < b);
         }
         NSLEEP_US(10);
@@ -121,6 +150,7 @@ struct dmmr_circle_buffer* new_circle_buffer(struct cfg_server_server *__cfg) {
     if (!cb || !__cfg)
         return 0;
     cfg = __cfg;
+    cb->is_behind_cursor = is_behind_cursor;
     cb->get_current_node = get_current_node;
     cb->iterate = iterate;
     cb->start = start;

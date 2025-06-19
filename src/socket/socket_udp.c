@@ -75,7 +75,8 @@ static void* receiver_thread(void* arg) {
             node->on_receive_cb(&(node->recv_manager));
 
     } while (node->run);
-
+    if(node->on_close_cb)
+        node->on_close_cb(node);
     return 0;
 }
 

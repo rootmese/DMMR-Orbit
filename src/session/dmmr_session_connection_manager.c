@@ -93,7 +93,7 @@ struct dmmr_session_connection_manager* new_session_connection_manager(
 {
     if (!cb || !sched || !sock)
         return 0;
-
+    int ret;
     struct dmmr_session_connection_manager* mgr = (struct dmmr_session_connection_manager*)calloc(1, sizeof(struct dmmr_session_connection_manager));
     if (!mgr)
         return 0;
@@ -121,5 +121,15 @@ struct dmmr_session_connection_manager* new_session_connection_manager(
     _sock = sock;
     _this = mgr;
 
+    ret = start_session_connection(_circle_buffer);
+    if(ret)
+        return 0;
+
+    set_snd_cb(_sock->dispatcher);
+
     return mgr;
+}
+
+void delete_session_connection_manager(void){
+    stop_session_connection();
 }

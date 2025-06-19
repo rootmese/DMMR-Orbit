@@ -28,11 +28,6 @@ static struct session_connection_pool_recno *recno = 0;
 
 static void (*snd_cb)(union protocol_base_cb *session, struct node*, unsigned size) = 0;
 
-static inline int is_cursor_safe(struct dmmr_circle_buffer *cb, struct node_circle_buffer *cur) {
-    return (!(cur == cb->cursor));
-}
-
-
 struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
     register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
@@ -50,7 +45,6 @@ struct session_connection_pool *get_recno_slot(void) {
             return 0;
         }
     }
-    pthread_mutex_lock(&session_connection_pool_mutex);
     struct session_connection_pool *ret = (recno + session_connection_pool_recno_count++)->pool;
     pthread_mutex_unlock(&session_connection_pool_mutex);
     return ret;
@@ -79,13 +73,15 @@ static inline void sort_pool_by_arrival_inline(struct node *v, size_t c) {
     }
 }
 
-static inline uint16_t get_session_size(struct session_connection_pool *p) {
+static inline uint16_t get_session_size(struct session_connection_pool *p, uint32_t max) {
     if(p){
         struct node *n = p->pool, *n1 = n + p->pool_count;
         uint16_t total = 0;
         if(p->pool_count)
             do {
                 total += n->value_size;
+                if(total >=max)
+                    return total;
             } while(++n < n1);
         return total;
     }
@@ -97,14 +93,14 @@ static inline void process_session_node(struct session_connection_pool *conn) {
     if (!(node_cmp(&(conn->cursor->n), get_session_node(&(conn->session))))) {
         *(conn->pool + conn->pool_count) = conn->cursor->n;
         conn->pool_count++;
-        uint16_t size = get_session_size(conn);
-        if (size >= 9000 && conn->pool_size > 0) {
+        uint16_t size = get_session_size(conn, 8520); // TODO valor baseado em 1500 de MTU
+        if (size >= 8520 && conn->pool_size > 0) { // TODO valor baseado em 1500 de MTU
             unsigned count = 0, siz = 0;
             struct node *n = conn->pool, *n0 = n + conn->pool_count;
             do {
                 siz += n->value_size;
                 ++count;
-            } while (siz <= 9000 && ++n < n0);
+            } while (siz <= 8520 && ++n < n0);
             if (snd_cb)
                 snd_cb(&(conn->session), conn->pool, count);
             if (count <= conn->pool_count) {
@@ -138,20 +134,18 @@ static void* session_worker(void* arg) {
             pthread_mutex_unlock(&conn->mutex);
         }
         process_session_node(conn);
-        if (!is_cursor_safe(circle_buffer, conn->cursor)) {
+        while (!(circle_buffer->is_behind_cursor(conn->cursor)))
             NSLEEP_US(10);
-            continue;
-        }
-        while (conn->cursor != circle_buffer->cursor->prev_ptr) {
-            process_session_node(conn);
-            conn->cursor = circle_buffer->iterate(conn->cursor, head);
-        }
         conn->cursor = circle_buffer->iterate(conn->cursor, head);
         NSLEEP_US(10);
     } while (conn->run);
 
 return_fail:
     return 0;
+}
+
+void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size)){
+    snd_cb = send_cb;
 }
 
 int insert_session(struct session_connection_pool *session) {
@@ -185,10 +179,6 @@ void delete_session(struct session_connection_pool *p, int do_sleep){
 
 int reload_session_conection(void){
     return 0;
-}
-
-void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size)){
-    snd_cb = send_cb;
 }
 
 int start_session_connection(struct dmmr_circle_buffer *__cb){
