@@ -76,4 +76,4 @@ $(LEX_C) $(LEX_H): $(LEX_SRC)
 # Limpeza
 clean:
 	@echo "[CLEAN]"
-	@rm -rf $(BUILD_DIR) $(BIN_DIR) $(LEX_C) $(LEX_H)
+	@rm -rf $(BUILD_DIR) $(BIN_DIR) $(LEX_C) $(LEX_H) 2> /dev/null

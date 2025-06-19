@@ -36,12 +36,13 @@ static inline int is_cursor_safe(struct dmmr_circle_buffer *cb, struct node_circ
 struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
     register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
+    pthread_mutex_lock(&session_connection_pool_mutex);
     for (; p < p1; ++p)
         if(!(p->pool && p->pool->run)){
+            pthread_mutex_unlock(&session_connection_pool_mutex);
             return p->pool;
         }
     if (session_connection_pool_recno_count >= session_connection_pool_recno_size) {
-        pthread_mutex_lock(&session_connection_pool_mutex);
         session_connection_pool_recno_size *= 2;
         recno = (struct session_connection_pool_recno*)realloc(recno, session_connection_pool_recno_size * sizeof(struct session_connection_pool_recno));
         if (!recno){

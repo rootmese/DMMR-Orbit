@@ -21,7 +21,9 @@ static uint32_t nbuff_size = 0;
 static uint32_t nbuff_count = 0;
 
 // TODO por mutex nesta seção do código
-static pthread_mutex_t sock_mutex;
+static pthread_mutex_t node_fifo_buffer_mutex;
+
+static pthread_mutex_t protocol_base_cb_mutex;
 
 static struct dmmr_circle_buffer* circle_buffer = 0;
 
@@ -33,37 +35,65 @@ static void (*on_accept_cb_tcp)(struct tcp_node*) = 0;
 
 static void (*on_receive_cb)(struct node*) = 0;
 
-struct node_fifo_buffer *get_struct_node_buffer(void) {
+static struct node_fifo_buffer *get_struct_node_buffer(void) {
     register struct node_fifo_buffer *p = nbuff;
     register struct node_fifo_buffer *p1 = p + nbuff_size;
+    pthread_mutex_lock(&node_fifo_buffer_mutex);
     for (; p < p1; ++p)
         if(!(p->n)){
-            __mset(p, 0, sizeof(struct node_fifo_buffer));
+            pthread_mutex_unlock(&node_fifo_buffer_mutex);
             return p;
         }
     if (nbuff_count >= nbuff_size) {
         nbuff_size *= 2;
         nbuff = (struct node_fifo_buffer*)realloc(nbuff, nbuff_size * sizeof(struct node_fifo_buffer));
-        if (!nbuff)
+        if (!nbuff){
+            pthread_mutex_unlock(&node_fifo_buffer_mutex);
             return 0;
+        }
     }
-    return nbuff + nbuff_count++;
+    struct node_fifo_buffer *ret =  nbuff + nbuff_count++;
+    pthread_mutex_unlock(&node_fifo_buffer_mutex);
+    return ret;
 }
 
-union protocol_base_cb *get_union_protocol_base_cb(void) {
+static void delete_struct_node_buffer(struct node_fifo_buffer *p){
+    if(p){
+        pthread_mutex_unlock(&node_fifo_buffer_mutex);
+        __mset(p, 0, sizeof(struct node_fifo_buffer));
+        pthread_mutex_unlock(&node_fifo_buffer_mutex);
+    }
+} 
+
+static union protocol_base_cb *get_union_protocol_base_cb(void) {
     register union protocol_base_cb *p = cap;
     register union protocol_base_cb *p1 = cap + cap_size;
+    pthread_mutex_lock(&protocol_base_cb_mutex);
     for (; p < p1; ++p)
-        if (!(p->none.proto))
+        if (!(p->none.proto)){
+            pthread_mutex_unlock(&protocol_base_cb_mutex);
             return p;
+        }
     if(cap_count >= cap_size) {
         cap_size *= 2;
         cap = (union protocol_base_cb*)realloc(cap, cap_size * sizeof(union protocol_base_cb));
-        if(!cap)
+        if(!cap){
+            pthread_mutex_unlock(&protocol_base_cb_mutex);
             return 0;
+        }
     }
-    return cap + cap_count++;
+    union protocol_base_cb *ret =  cap + cap_count++;
+    pthread_mutex_unlock(&protocol_base_cb_mutex);
+    return ret;
 }
+
+static void delete_union_protocol_base_cb(union protocol_base_cb *u){
+    if(u){
+        pthread_mutex_unlock(&protocol_base_cb_mutex);
+        __mset(u, 0, sizeof(union protocol_base_cb));
+        pthread_mutex_unlock(&protocol_base_cb_mutex);
+    }
+} 
 
 static void on_receive_connection_cb(struct node_recv_manager *nrm){
     if(nrm){
@@ -267,7 +297,8 @@ struct dmmr_socket *new_dmmr_socket(struct dmmr_circle_buffer* __circle_buffer, 
                 p->reload = reload;
                 p->start_acception = start_acception;
                 circle_buffer = __circle_buffer;
-                pthread_mutex_init(&sock_mutex, 0);
+                pthread_mutex_init(&node_fifo_buffer_mutex, 0);
+                pthread_mutex_init(&protocol_base_cb_mutex, 0);
                 this = p;
                 (void)start_udp_socket();
                 return p;

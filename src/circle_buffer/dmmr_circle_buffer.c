@@ -27,7 +27,7 @@ static struct node_circle_buffer* get_current_node(void) {
 }
 
 static void* fifo_worker(void* arg) {
-    const int MAX_BATCH = 0x100; //valor será caso de estudo, tuning via compilação
+    const int MAX_BATCH = 0x400; //valor será caso de estudo, tuning via compilação
     struct node_circle_buffer* slot = 0;
     struct node_fifo_buffer* *batch_ptr = 0;
     struct node_fifo_buffer* batch[MAX_BATCH];

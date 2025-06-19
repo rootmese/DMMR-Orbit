@@ -23,11 +23,13 @@ static pthread_mutex_t tcp_node_mutex;
 static struct node *get_node(void){
     register struct node *p = node_pool;
     register struct node *p1 = node_pool + node_pool_size;
+    pthread_mutex_lock(&node_mutex);
     for (; p < p1; ++p)
-        if (!(p->fd))
+        if (!(p->fd)){
+             pthread_mutex_unlock(&node_mutex);
             return p;
+        }
     if(node_pool_count >= node_pool_size) {
-        pthread_mutex_lock(&node_mutex);
         node_pool_size *= 2;
         node_pool = (struct node*)realloc(node_pool, node_pool_size * sizeof(struct node));
         if(!node_pool){
