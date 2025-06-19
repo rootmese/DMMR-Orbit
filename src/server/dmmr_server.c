@@ -46,14 +46,20 @@ static volatile uint8_t reload = 0;
 
 extern FILE* yyin;
 
-int yylex(void);
+extern int yylex(void);
 
 static void handle_signal(int sig) {
-    if (sig == SIGUSR1)
-        reload = 1;
-    else if (sig == SIGINT || sig == SIGTERM) {
-        reload = 0;
-        run = 0;
+    switch(sig){
+        case SIGUSR1:
+            reload = 1;
+            break;
+        case SIGINT:
+        case SIGTERM:
+            reload = 0;
+            run = 0;
+            break;
+        default:
+            break; // Stupid break :P
     }
 }
 
@@ -67,7 +73,7 @@ void server_handle_token(const char *type, const char *value)
         else if (!strcmp(value, "REAL_TIME_DEAD_LINE")) state = SET_REAL_TIME_DEAD_LINE;
         else if (!strcmp(value, "REAL_TIME_USER_DEFINED")) state = SET_REAL_TIME_USER_DEFINED;
         else if (!strcmp(value, "TRUNK_ACCEPT_URI")) state = SET_TRUNK_ACCEPT_URI;
-        else if (!strcmp(value, "TRUNK_DISPATCH_URI")) state = SET_TRUNK_DISPATCH_URI;
+        else if (!strcmp(value, "TRUNK_DISPATCH_URI")) state = SET_TRUNK_DISPATCH_URI;a
         else if (!strcmp(value, "SCHEDULER_PREEMPTIVE_DEADLINE")) state = SET_SCHEDULER_PREEMPTIVE_DEADLINE;
         else state = NONE;
     }
