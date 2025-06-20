@@ -149,6 +149,7 @@ void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, u
 }
 
 int insert_session(struct session_connection_pool *session) {
+    int ret;
     if(!circle_buffer || !session)
         return EOF;
     session->pool = (struct node*)calloc(0x400, sizeof(struct node));
@@ -159,8 +160,8 @@ int insert_session(struct session_connection_pool *session) {
     session->run = !0;
     session->cursor = circle_buffer->get_current_node();
     pthread_mutex_init(&session->mutex, NULL);
-    (void)pthread_create(&session->thread, 0, session_worker, session);
-    return 0;
+    spawn_detached_thread(&session->thread, session_worker, session, &ret);
+    return ret;
 }
 
 void delete_session(struct session_connection_pool *p, int do_sleep){

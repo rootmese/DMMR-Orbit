@@ -257,10 +257,15 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
 
 static int start_accept_from_uri(const unsigned char *uri){
     if(uri){
+         printf("%s:%d\n", __FUNCTION__, __LINE__);
         uint16_t port;
+         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         char host_buf[0x100];
+         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         __mset(host_buf, 0, sizeof(host_buf));
+         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
+         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         if(!(proto == proto_none_t))
             return start_acception(proto, port, host_buf);
     }
@@ -298,6 +303,7 @@ struct dmmr_socket *new_dmmr_socket(struct dmmr_circle_buffer* __circle_buffer, 
                 nbuff_size = 0x400;
                 p->dispatcher = dispatcher;
                 p->create_dispatcher_from_uri = create_dispatcher_from_uri;
+                p->start_accept_from_uri = start_accept_from_uri;
                 p->reload = reload;
                 p->start_acception = start_acception;
                 circle_buffer = __circle_buffer;

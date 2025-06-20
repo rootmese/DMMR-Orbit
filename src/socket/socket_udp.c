@@ -127,6 +127,7 @@ int udp_server_is_active(void) {
 }
 
 int start_udp_service(struct udp_node *udp_node) {
+    int ret;
     struct udp_node *node = udp_node;
     if (node) {
         int ret;
@@ -164,8 +165,8 @@ int start_udp_service(struct udp_node *udp_node) {
                 break;
         }
 
-        pthread_create(&node->accept_thread, 0, receiver_thread, node);
-        return 0;
+        spawn_detached_thread(&node->accept_thread, receiver_thread, node, &ret);
+        return ret;
 
     return_socket_error:
         close(node->node_cfg.fd);

@@ -146,6 +146,7 @@ static void sched_reload(void){
 
 static int sched_start(void){
     if(this){
+        int ret;
         pthread_attr_t attr;
         struct sched_param param;
         slots = (struct scheduler_connection*)calloc(0x400, sizeof(struct scheduler_connection));
@@ -159,9 +160,11 @@ static int sched_start(void){
         pthread_attr_setschedparam(&attr, &param);
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);  // Aplica a prioridade explicitamente
         pthread_mutex_init(&slots_mutex, 0);
-        pthread_create(&this->reorder_thread, 0, _reorder_thread, this);
-        pthread_create(&this->send_thread, &attr, _check_and_send_thread, this);
-        return 0;
+        spawn_detached_thread(&this->reorder_thread, _reorder_thread, this, &ret);
+        if(ret)
+            return ret;
+        spawn_detached_thread_with_attr(&this->send_thread, &attr, _check_and_send_thread, this, &ret);
+        return ret;
     }
     else
         return EOF;

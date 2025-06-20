@@ -32,6 +32,38 @@
 #define CIRCLE_BUFFER_SIZE 9000
 #endif
 
+#define LOG() printf("[%s:%d]\n", __FUNCTION__, __LINE__)
+
+#define LOG_ERRNO(msg) \
+    fprintf(stderr, "[%s:%d] %s: (%d) %s\n", __FUNCTION__, __LINE__, msg, errno, strerror(errno))
+
+#ifndef __SPAW_DETACHED_THREADS_H__
+#define __SPAW_DETACHED_THREADS_H__
+
+
+static inline void spawn_detached_thread(pthread_t *t, void *(*fn)(void *), void *arg, int *ret)
+{
+    if (!(*ret = pthread_create(t, 0, fn, arg)))
+        pthread_detach(*t);
+    // TODO - colocar logs baseado em errno e strerror
+}
+
+#endif
+
+#ifndef __SPAW_DETACHED_WITH_ATTRS_THREADS_H__
+#define __SPAW_DETACHED_WITH_ATTRS_THREADS_H__
+
+static inline void spawn_detached_thread_with_attr(pthread_t *t, pthread_attr_t *attr, void *(*fn)(void *), void *arg, int *ret)
+{
+    *ret = 0;
+    if (!(*ret = pthread_create(t, attr, fn, arg)))
+        pthread_detach(*t);
+    // TODO - colocar logs baseado em errno e strerror
+}
+
+#endif
+
+
 typedef enum{
     proto_none_t   = 0x00,
     proto_udp_t    = 0x01,

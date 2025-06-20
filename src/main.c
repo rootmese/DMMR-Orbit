@@ -15,7 +15,7 @@ static void process_args(int argc, char **argv) {
     while ((opt = getopt(argc, argv, "d:f:")) != EOF) {
         switch (opt) {
             case 'f': // Arquivo de configuração
-                strlcpy((char*)cfg.cfg_file, optarg, sizeof(cfg.cfg_file) - 1);
+                strlcpy((char*)cfg.cfg_file, optarg, sizeof(cfg.cfg_file) -1);
                 struct stat sb;
                 if (stat(cfg.cfg_file, &sb) != 0) {
                     perror("Falha ao acessar arquivo de configuração");
@@ -33,7 +33,7 @@ static void process_args(int argc, char **argv) {
 }
 
 int run_cli(void){
-struct dmmr_server* server = new_dmmr_server(&cfg);
+    struct dmmr_server* server = new_dmmr_server(&cfg);
     if (!server) {
         fprintf(stderr, "Falha ao criar o servidor\n");
         exit(EOF);
@@ -69,22 +69,27 @@ int main(int argc, char** argv) {
             break; /* Stupid Break:P */
         default:
         {
+             LOG();
             char output_file[0x200];
+             LOG();
             int l = snprintf(output_file, sizeof(output_file), "/var/run/%s.pid", *argv);
             if (l < 0 || l >= sizeof(output_file)) {
                 perror("Erro ao formatar nome do arquivo PID");
                exit(EXIT_FAILURE);
             }
+             LOG();
             FILE *output_file_ptr = fopen(output_file, "w");
             if (!output_file_ptr) {
                 perror("Erro ao criar arquivo de saída");
                 exit(EXIT_FAILURE);
+                 LOG();
             }
             else {
                 fprintf(output_file_ptr, "%d", pid);
                 fclose(output_file_ptr);
+                 LOG();
             }
-            wait(0);
+            sleep(20);
             break;
         }
     }

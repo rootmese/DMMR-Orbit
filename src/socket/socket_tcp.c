@@ -145,6 +145,7 @@ done:
 
 
 static void *accept_thread(void *arg) {
+    int ret;
     struct tcp_node *node = (struct tcp_node*)arg;
     struct sockaddr_in client_addr;
     struct sockaddr_in6 client_addr_v6;
@@ -199,9 +200,10 @@ static void *accept_thread(void *arg) {
                     tn->run = !0;
                     (void)init_node_recv_manager(&(tn->recv_manager));
                     tn->on_receive_cb = node->on_receive_cb;
-                    (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
-                    if(node->on_accept_cb)
-                        node->on_accept_cb(tn);
+                    spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
+                    if(!ret)
+                        if(node->on_accept_cb)
+                            node->on_accept_cb(tn);
                 }
             }
         }
@@ -243,9 +245,10 @@ int connect_tcp_server(struct tcp_node *node){
                 tn->run = !0;
                 (void)init_node_recv_manager(&(tn->recv_manager));
                 tn->on_receive_cb = node->on_receive_cb;
-                (void)pthread_create(&tn->accept_thread, 0, tcp_receiver_thread, tn);
-                if (node->on_accept_cb)
-                    node->on_accept_cb(tn);
+                spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
+                if(!ret)
+                    if (node->on_accept_cb)
+                        node->on_accept_cb(tn);
             }
         }
     return 0;
@@ -308,7 +311,7 @@ int start_tcp_service(struct tcp_node *node) {
 
         node->run = !0;
 
-        ret = pthread_create(&node->accept_thread, 0, accept_thread, node);
+        spawn_detached_thread(&node->accept_thread, accept_thread, node, &ret);
         if (ret) {
             close(node->node->fd);
             return EOF;
