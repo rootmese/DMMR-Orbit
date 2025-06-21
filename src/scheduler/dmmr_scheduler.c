@@ -164,7 +164,7 @@ static int sched_start(void){
         if(ret)
             return ret;
         spawn_detached_thread_with_attr(&this->send_thread, &attr, _check_and_send_thread, this, &ret);
-        return ret;
+        return 0;
     }
     else
         return EOF;

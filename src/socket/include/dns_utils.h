@@ -2,6 +2,7 @@
 #define __DNS_UTILS_H__
 
 #include <__vcpy.h>
+#include <__mset.h>
 
 #include <defs.h>
 
@@ -10,6 +11,7 @@ static inline ezp_addr_type dns2ipaddr(const char *in, unsigned char *out) {
     char ipstr[INET6_ADDRSTRLEN];
     struct addrinfo hints, *res, *p;
 
+    memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC; // IPv4 ou IPv6
     hints.ai_socktype = SOCK_STREAM;
 

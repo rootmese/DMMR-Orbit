@@ -55,14 +55,11 @@ static inline void foward_current_node(void){
 }
 
 static void* fifo_worker(void* arg) {
-    LOG();
-    sleep(1);
     const int MAX_BATCH = 0x400; //valor será caso de estudo, tuning via compilação
     struct node_circle_buffer *slot = 0;
     struct node_fifo_buffer **batch_ptr = 0;
     struct node_fifo_buffer *batch[MAX_BATCH];
     struct node_fifo_buffer **b = batch;
-    LOG();
     do {
         b = batch;
         pthread_mutex_lock(&this->fifo_lock);
@@ -81,9 +78,7 @@ static void* fifo_worker(void* arg) {
                 foward_current_node(); // Avoid overrun in sessions
             } while (++batch_ptr < b);
         }
-        LOG();
         NSLEEP_US(10);
-        LOG();
     } while (run);
 
     return 0;
@@ -101,12 +96,11 @@ static struct node_circle_buffer *iterate(struct node_circle_buffer *cursor, str
 
 static int start(void){
     if(this){
-        LOG();
         int ret;
         buffer = (struct node_circle_buffer*)calloc(cfg->circle_buffer_size, sizeof(struct node_circle_buffer));
         if (!buffer)
             return 0;
-        LOG();
+
         CIRCLEQ_INIT(&(this->head));
         TAILQ_INIT(&(this->fifo)); 
         struct node_circle_buffer *prev = 0;
@@ -118,10 +112,10 @@ static int start(void){
                 p->prev_ptr = prev;
             prev = p;
         } while (++p < p1);
-        LOG();
+
         this->cursor = CIRCLEQ_EMPTY(&this->head) ? 0 : CIRCLEQ_FIRST(&this->head);
         CIRCLEQ_FIRST(&this->head)->prev_ptr = CIRCLEQ_LAST(&this->head);
-        LOG();
+
         pthread_attr_t attr;
         struct sched_param param;
         run = !0;
@@ -129,12 +123,12 @@ static int start(void){
         pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
         param.sched_priority = 80;
         pthread_attr_setschedparam(&attr, &param);
-        LOG();
+
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
         pthread_mutex_init(&this->fifo_lock, 0);
         spawn_detached_thread_with_attr(&(this->fifo_thread), &attr, fifo_worker, this, &ret);
-        LOG();
-        return ret;
+
+        return 0;
     }
     else
         return EOF;

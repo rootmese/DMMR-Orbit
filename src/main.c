@@ -1,21 +1,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/errno.h>
-#include <sys/wait.h>
+#include <sys/stat.h>
 #include <string.h>
-#include <dmmr_server.h>
+#include <signal.h>
+#include <errno.h>
+
+#include <dmmr_daemon.h>
 #include <__mset.h>
 
 static struct cfg_daemon_server cfg;
+
+static volatile int running = !0;
+
+static void handle_signal(int signo) {
+    if (signo == SIGINT || signo == SIGTERM) {
+        fprintf(stderr, "\n[SIGNAL] Encerrando foreground (recebido sinal %d)\n", signo);
+        running = 0;
+    }
+}
 
 static void process_args(int argc, char **argv) {
     int opt;
     while ((opt = getopt(argc, argv, "d:f:")) != EOF) {
         switch (opt) {
-            case 'f': // Arquivo de configuração
-                strlcpy((char*)cfg.cfg_file, optarg, sizeof(cfg.cfg_file) -1);
+            case 'f':
+                strlcpy((char*)cfg.cfg_file, optarg, sizeof(cfg.cfg_file) - 1);
                 struct stat sb;
                 if (stat(cfg.cfg_file, &sb) != 0) {
                     perror("Falha ao acessar arquivo de configuração");
@@ -25,73 +35,65 @@ static void process_args(int argc, char **argv) {
             case 'd':
                 cfg.daemonize = atoi(optarg) & 0xFF;
                 break;
-            default: // Opção inválida
-                fprintf(stderr, "Uso: %s [-f arquivo.conf]\n", argv[0]);
+            default:
+                fprintf(stderr, "Uso: %s [-f arquivo.conf] [-d 0|1]\n", argv[0]);
                 exit(EXIT_FAILURE);
         }
     }
 }
 
-int run_cli(void){
+
+
+int run_foreground(void){
+    if (signal(SIGINT, handle_signal) == SIG_ERR ||
+        signal(SIGTERM, handle_signal) == SIG_ERR) {
+        fprintf(stderr, "[ERRO] Falha ao configurar handler de sinal\n");
+        return EOF;
+    }
+
     struct dmmr_server* server = new_dmmr_server(&cfg);
     if (!server) {
-        fprintf(stderr, "Falha ao criar o servidor\n");
-        exit(EOF);
+        fprintf(stderr, "Falha ao criar o servidor: %d (%s)\n", errno, strerror(errno));
+        return EOF;
     }
-    (void)server->run();
+
+    fprintf(stderr, "[INFO] Servidor rodando em foreground. Pressione Ctrl+C para sair...\n");
+    server->start();
+    // Rodar até receber sinal
+    while (running) {
+        int status = server->run(); // Idealmente deve ser não-bloqueante ou loop com timeout
+        if (status != 0) {
+            fprintf(stderr, "[ERRO] server->run() retornou %d\n", status);
+            break;
+        }
+    }
+
+    fprintf(stderr, "[INFO] Parando servidor...\n");
     server->stop();
     free_dmmr_server(server);
+    fprintf(stderr, "[INFO] Encerrado.\n");
+
     return 0;
 }
+
 
 int main(int argc, char** argv) {
     __mset(&cfg, 0, sizeof(struct cfg_daemon_server));
     process_args(argc, argv);
+
     if(!(cfg.daemonize))
-        return run_cli();
-    int pid = fork();
-    switch (pid) {
-        case 0:
-        {
-            struct dmmr_server* server = new_dmmr_server(&cfg);
-            if (!server) {
-                fprintf(stderr, "Falha ao criar o servidor\n");
-                exit(EXIT_FAILURE);
-            }
-            (void)server->run();
-            server->stop();
-            free_dmmr_server(server);
-            break;
-        }
-        case EOF:
-            perror("Erro no fork()");
+        return run_foreground();
+    else{
+        struct dmmr_daemon* daemon = new_dmmr_daemon(&cfg);
+        if (!daemon) {
+            fprintf(stderr, "Falha ao criar o daemon\n");
             exit(EXIT_FAILURE);
-            break; /* Stupid Break:P */
-        default:
-        {
-             LOG();
-            char output_file[0x200];
-             LOG();
-            int l = snprintf(output_file, sizeof(output_file), "/var/run/%s.pid", *argv);
-            if (l < 0 || l >= sizeof(output_file)) {
-                perror("Erro ao formatar nome do arquivo PID");
-               exit(EXIT_FAILURE);
-            }
-             LOG();
-            FILE *output_file_ptr = fopen(output_file, "w");
-            if (!output_file_ptr) {
-                perror("Erro ao criar arquivo de saída");
-                exit(EXIT_FAILURE);
-                 LOG();
-            }
-            else {
-                fprintf(output_file_ptr, "%d", pid);
-                fclose(output_file_ptr);
-                 LOG();
-            }
-            sleep(20);
-            break;
         }
+        if (daemon->start() != 0) {
+            fprintf(stderr, "Falha ao iniciar o daemon\n");
+            exit(EXIT_FAILURE);
+        }
+        else
+            return daemon->run();
     }
-    return 0;
 }

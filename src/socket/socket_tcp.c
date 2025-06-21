@@ -154,7 +154,7 @@ static void *accept_thread(void *arg) {
     do {
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(node->node->fd, &readfds);
+        FD_SET(node->node_cfg.fd, &readfds);
         struct timeval timeout = {
             .tv_sec = 1,
             .tv_usec = 0

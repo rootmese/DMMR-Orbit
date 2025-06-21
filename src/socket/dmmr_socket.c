@@ -217,6 +217,7 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
                 cb->udp.on_accept_cb = on_accept_cb_udp;
                 cb->udp.on_receive_cb = on_receive_connection_cb;
                 ret = start_udp_service(&(cb->udp));
+                
             }
             break;  // fim case proto_udp_t
         }
@@ -257,15 +258,10 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
 
 static int start_accept_from_uri(const unsigned char *uri){
     if(uri){
-         printf("%s:%d\n", __FUNCTION__, __LINE__);
         uint16_t port;
-         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         char host_buf[0x100];
-         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         __mset(host_buf, 0, sizeof(host_buf));
-         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
-         printf("%s:%d - %s\n", __FUNCTION__, __LINE__);
         if(!(proto == proto_none_t))
             return start_acception(proto, port, host_buf);
     }

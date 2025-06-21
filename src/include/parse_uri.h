@@ -9,6 +9,7 @@
 #include <strlcpy.h>
 #include <string.h>
 #include "defs.h"
+#include "__vcpy.h"
 
 #define __UDP_PROTO__         "UDP/"
 #define __UDP_PROTO_LEN__    (sizeof(__UDP_PROTO__) - 1)
@@ -18,10 +19,12 @@
 
 #define __HOST_URI_SEP__     ':'
 
-static inline proto_t parse_protocol_host_port(const unsigned char *input, char unsigned *host_out, size_t host_size, uint16_t *port_out) {
+static inline proto_t parse_protocol_host_port(const unsigned char *input, unsigned char *host_out, size_t host_size, uint16_t *port_out) {
     if (!input || !host_out || host_size == 0 || !port_out)
         return proto_none_t;
+
     proto_t proto = proto_none_t;
+
     if (strncmp((char*)input, __UDP_PROTO__, __UDP_PROTO_LEN__) == 0) {
         proto = proto_udp_t;
         input += __UDP_PROTO_LEN__;
@@ -32,16 +35,22 @@ static inline proto_t parse_protocol_host_port(const unsigned char *input, char 
     }
     else
         return proto_none_t;
-    const char *sep = strrchr(input, __HOST_URI_SEP__);
-    if (!sep || sep == input)
+
+    const char *sep = strrchr((const char*)input, __HOST_URI_SEP__);
+    if (!sep || sep == (const char*)input)
         return proto_none_t;
-    size_t host_len = (uint8_t*)sep - (uint8_t*)input;
-    char *tmp_host = input + host_len + 1;
-    strlcpy(tmp_host, input, host_len);
-    strlcpy(host_out, tmp_host, host_size);
+
+    size_t host_len = (size_t)(sep - (const char*)input);
+    if (host_len >= host_size)
+        host_len = host_size - 1;
+
+    __vcpy(host_out, input, host_len);
+    host_out[host_len] = '\0';
+
     *port_out = (uint16_t)atoi(sep + 1);
     return proto;
 }
+
 
 
 #endif

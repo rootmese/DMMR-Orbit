@@ -51,6 +51,7 @@ static void handle_signal(int sig) {
 }
 
 int server_proc(void){
+
     (void)(parser->run());
     if(plugin)
             free(plugin);
@@ -58,12 +59,14 @@ int server_proc(void){
             free(session_manager);
     if(scheduler){
         scheduler->stop();
+        sleep(1);
         free(scheduler);
     }
     if(sock)
         free(sock);
     if(circle_buffer){
         circle_buffer->stop();
+        sleep(1);
         free(circle_buffer);
     }
     if(parser)
@@ -71,67 +74,57 @@ int server_proc(void){
     return 0;
 }
 
-static void server_stop(void) {
-}
-
 static int server_run(void){
     if(this){
-        int ret;
-        signal(SIGUSR1, handle_signal);
-        signal(SIGINT, handle_signal);
-        signal(SIGTERM, handle_signal);
-
-        LOG();
-        parser = new_dmmr_parser(cfg_daemon, &cfg);
-        if(!parser)
-            return EOF;
-        
-        LOG();
-        ret = parser->load();
-        if(ret)
-            return EOF;
-
-        LOG();
-        circle_buffer = new_circle_buffer(&cfg);
-        if(!circle_buffer)
-            return EOF;
-
-        LOG();
-        ret = circle_buffer->start();
-        if(ret)
-            return EOF;
-
-        LOG();    
-        sock = new_dmmr_socket(circle_buffer, &cfg);
-        if(!sock)
-            return EOF;
-
-        LOG();
-        scheduler = new_dmmr_scheduler(sock, &cfg);
-        if(!scheduler)
-            return EOF;
-
-        LOG();
-        ret = scheduler->start();
-        if(ret)
-            return EOF;
-
-        LOG();
-        session_manager = new_session_connection_manager(circle_buffer, scheduler, sock, &cfg);
-        if(!session_manager)
-            return EOF;
-
-        LOG();
-        plugin = new_dmmr_plugin(session_manager, &cfg);
-        if(!plugin)
-            return EOF;
-
-        LOG();
-        plugin->load(); // server proc
         sleep(1);
         return server_proc();
 
     }
+}
+
+static int server_start(void){
+    if(this){
+        int ret;
+
+        parser = new_dmmr_parser(cfg_daemon, &cfg);
+        if(!parser)
+            return EOF;
+
+        ret = parser->load();
+        if(ret)
+            return EOF;
+
+        circle_buffer = new_circle_buffer(&cfg);
+        if(!circle_buffer)
+            return EOF;
+
+        ret = circle_buffer->start();
+        if(ret)
+            return EOF;
+
+        sock = new_dmmr_socket(circle_buffer, &cfg);
+        if(!sock)
+            return EOF;
+
+        scheduler = new_dmmr_scheduler(sock, &cfg);
+        if(!scheduler)
+            return EOF;
+
+        ret = scheduler->start();
+        if(ret)
+            return EOF;
+
+        session_manager = new_session_connection_manager(circle_buffer, scheduler, sock, &cfg);
+        if(!session_manager)
+            return EOF;
+
+        plugin = new_dmmr_plugin(session_manager, &cfg);
+        if(!plugin)
+            return EOF;
+        plugin->load(); // server proc
+        sleep(1);
+    }
+    return 0;
 }
 
 struct dmmr_server* new_dmmr_server(struct cfg_daemon_server *__daemon_cfg) {
@@ -140,7 +133,8 @@ struct dmmr_server* new_dmmr_server(struct cfg_daemon_server *__daemon_cfg) {
         return 0;
     cfg_daemon = __daemon_cfg; 
     srv->run = server_run;
-    srv->stop = server_stop;
+    srv->start = server_start;
+    //srv->stop = server_stop;
     this = srv;
     return srv;
 }
