@@ -16,7 +16,8 @@ typedef enum {
     CONFIG_REAL_TIME_DEAD_LINE,
     CONFIG_REAL_TIME_USER_DEFINED,
     CONFIG_TRUNK_ACCEPT_URI,
-    CONFIG_TRUNK_DISPATCH_URI
+    CONFIG_TRUNK_DISPATCH_URI,
+    CONFIG_RB_LOG_LEVEL
 } ConfigState;
 
 // Estado interno do console
@@ -53,6 +54,8 @@ void handle_token(const char *type, const char *value) {
             state.current_setting = CONFIG_TRUNK_DISPATCH_URI;
         else if (strcmp(value, "SCHEDULER_PREEMPTIVE_DEADLINE") == 0) 
             state.current_setting = CONFIG_SCHEDULER_PREEMPTIVE_DEADLINE;
+        else if (strcmp(value, "RB_LOG_LEVEL") == 0) 
+            state.current_setting = CONFIG_RB_LOG_LEVEL;
     }
     else if (strcmp(type, "NUMBER") == 0) {
         switch (state.current_setting) {
@@ -76,6 +79,9 @@ void handle_token(const char *type, const char *value) {
                 break;
             case CONFIG_REAL_TIME_USER_DEFINED:
                 state.cfg->real_time_user_defined = strtoull(value, NULL, 10);
+                break;
+            case CONFIG_RB_LOG_LEVEL:
+                state.cfg->log_level = atoi(value);
                 break;
             default:
                 break;
@@ -108,32 +114,25 @@ void handle_token(const char *type, const char *value) {
 }
 
 int console_setup(const char *file_name, struct cfg_server_server *cfg) {
-    if (!file_name || !cfg) return EOF;
-    
-    // Resetar estado
+    if (!file_name || !cfg)
+        return EOF;
     memset(&state, 0, sizeof(state));
     state.cfg = cfg;
     state.current_setting = CONFIG_NONE;
-    
-    // Abrir arquivo de entrada
     state.input_file = fopen(file_name, "r");
     if (!state.input_file) {
         fprintf(stderr, "Erro ao abrir arquivo: %s\n", file_name);
         return EOF;
     }
-    
-    // Configurar scanner
     yyin = state.input_file;
-    
     return 0;
 }
 
 int console_run(void) {
-    if (!state.input_file || !state.cfg) return EOF;
-    
+    if (!state.input_file || !state.cfg)
+        return EOF;
     int token;
     while ((token = yylex()) != 0);
-    
     return 0;
 }
 

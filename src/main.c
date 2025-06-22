@@ -7,16 +7,17 @@
 #include <errno.h>
 
 #include <dmmr_daemon.h>
+#include <rb_log.h>
 #include <__mset.h>
 
 static struct cfg_daemon_server cfg;
 
-static volatile int running = !0;
+static volatile int run = 0;
 
 static void handle_signal(int signo) {
     if (signo == SIGINT || signo == SIGTERM) {
         fprintf(stderr, "\n[SIGNAL] Encerrando foreground (recebido sinal %d)\n", signo);
-        running = 0;
+        run = 0;
     }
 }
 
@@ -42,37 +43,32 @@ static void process_args(int argc, char **argv) {
     }
 }
 
-
-
 int run_foreground(void){
     if (signal(SIGINT, handle_signal) == SIG_ERR ||
         signal(SIGTERM, handle_signal) == SIG_ERR) {
         fprintf(stderr, "[ERRO] Falha ao configurar handler de sinal\n");
         return EOF;
     }
-
     struct dmmr_server* server = new_dmmr_server(&cfg);
     if (!server) {
         fprintf(stderr, "Falha ao criar o servidor: %d (%s)\n", errno, strerror(errno));
         return EOF;
     }
-
-    fprintf(stderr, "[INFO] Servidor rodando em foreground. Pressione Ctrl+C para sair...\n");
     server->start();
     // Rodar até receber sinal
-    while (running) {
+    rb_log_push(rb_log_level_info, "[INFO] Servidor rodando em foreground. Pressione Ctrl+C para sair...", __FUNCTION__, __LINE__);
+    run = !0;
+   do {
         int status = server->run(); // Idealmente deve ser não-bloqueante ou loop com timeout
         if (status != 0) {
             fprintf(stderr, "[ERRO] server->run() retornou %d\n", status);
             break;
         }
-    }
-
+    } while (run);
     fprintf(stderr, "[INFO] Parando servidor...\n");
     server->stop();
     free_dmmr_server(server);
     fprintf(stderr, "[INFO] Encerrado.\n");
-
     return 0;
 }
 
@@ -80,7 +76,6 @@ int run_foreground(void){
 int main(int argc, char** argv) {
     __mset(&cfg, 0, sizeof(struct cfg_daemon_server));
     process_args(argc, argv);
-
     if(!(cfg.daemonize))
         return run_foreground();
     else{

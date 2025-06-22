@@ -4,6 +4,8 @@
 #include <__vcpy.h>
 #include <__mset.h>
 
+#include <rb_log.h>
+
 #include <dmmr_server.h>
 #include <dmmr_parser.h>
 #include <dmmr_plugin.h>
@@ -53,10 +55,22 @@ static void handle_signal(int sig) {
 int server_proc(void){
 
     (void)(parser->run());
+    return 0;
+}
+
+static int server_run(void){
+    if(this){
+        sleep(1);
+        return server_proc();
+
+    }
+}
+
+static void server_stop(void){
     if(plugin)
-            free(plugin);
+        free(plugin);
     if(session_manager)
-            free(session_manager);
+        free(session_manager);
     if(scheduler){
         scheduler->stop();
         sleep(1);
@@ -71,53 +85,37 @@ int server_proc(void){
     }
     if(parser)
         free(parser);
-    return 0;
-}
-
-static int server_run(void){
-    if(this){
-        sleep(1);
-        return server_proc();
-
-    }
+    rb_log_shutdown();
 }
 
 static int server_start(void){
     if(this){
         int ret;
-
         parser = new_dmmr_parser(cfg_daemon, &cfg);
         if(!parser)
             return EOF;
-
         ret = parser->load();
         if(ret)
             return EOF;
-
+        rb_log_init(&cfg);
         circle_buffer = new_circle_buffer(&cfg);
         if(!circle_buffer)
             return EOF;
-
         ret = circle_buffer->start();
         if(ret)
             return EOF;
-
         sock = new_dmmr_socket(circle_buffer, &cfg);
         if(!sock)
             return EOF;
-
         scheduler = new_dmmr_scheduler(sock, &cfg);
         if(!scheduler)
             return EOF;
-
         ret = scheduler->start();
         if(ret)
             return EOF;
-
         session_manager = new_session_connection_manager(circle_buffer, scheduler, sock, &cfg);
         if(!session_manager)
             return EOF;
-
         plugin = new_dmmr_plugin(session_manager, &cfg);
         if(!plugin)
             return EOF;
@@ -134,7 +132,7 @@ struct dmmr_server* new_dmmr_server(struct cfg_daemon_server *__daemon_cfg) {
     cfg_daemon = __daemon_cfg; 
     srv->run = server_run;
     srv->start = server_start;
-    //srv->stop = server_stop;
+    srv->stop = server_stop;
     this = srv;
     return srv;
 }

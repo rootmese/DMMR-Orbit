@@ -13,41 +13,30 @@ static struct cfg_daemon_server *cfg_daemon = 0;
 static struct cfg_server_server *cfg_server = 0;
 
 static int parser_load_config(void) {
-    if (!cfg_daemon || !cfg_server) return EOF;
-    
-    // Carregar configuração inicial
-    if (console_setup(cfg_daemon->cfg_file, cfg_server) != 0) {
+    if (!cfg_daemon || !cfg_server)
         return EOF;
-    }
-    
-    if (console_run() != 0) {
+    int ret;
+    ret = console_setup(cfg_daemon->cfg_file, cfg_server);
+    if (ret)
         return EOF;
-    }
-    
-    // Calcular CRC para futuras verificações
+    ret = console_run();
+    if (ret)
+        return EOF;
     generate_crc32_table();
     last_crc = crc32_file(cfg_daemon->cfg_file);
-    
     return 0;
 }
 
 static void parser_reload_config(void) {
-    do {
-        LOG();
-        uint32_t crc = crc32_file(cfg_daemon->cfg_file);
-        if (crc && crc != last_crc) {
-            last_crc = crc;
-            
-            // Recarregar configuração
-            console_cleanup();
-            if (console_setup(cfg_daemon->cfg_file, cfg_server) == 0) {
-                console_run();
-            }
-        }
-        LOG();
-        sleep(1);
-    } while(run);
-    LOG();
+    int ret;
+    uint32_t crc = crc32_file(cfg_daemon->cfg_file);
+    if (crc && crc != last_crc) {
+        last_crc = crc;
+        console_cleanup();
+        ret = console_setup(cfg_daemon->cfg_file, cfg_server);
+        if (!ret)
+            console_run();
+    }
 }
 
 static void parser_stop_config(void) {
@@ -73,5 +62,5 @@ struct dmmr_parser* new_dmmr_parser(
         
         return p;
     }
-    return NULL;
+    return 0;
 }

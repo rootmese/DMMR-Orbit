@@ -1,36 +1,38 @@
+%option noyywrap
+%option nounput
+%option noinput
+%option yylineno
+
 %{
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "dmmr_parser.h"
+#include <console.h>
+#include <l_tokens.h>
 
-extern struct dmmr_parser* current_parser;
-
-// Macro helper para disparar o token
-#define SEND_TOKEN(type, val) \
-    do { \
-        if (current_parser && current_parser->handle_token) \
-            current_parser->handle_token(current_parser, type, val); \
-    } while (0)
+// Usar a funÃ§Ã£o de tratamento interno
+extern void handle_token(const char*, const char*);
+#define SEND_TOKEN(type, val) handle_token(type, val)
 %}
 
-%option noyywrap
+DIGIT   [0-9]
+LETTER  [a-zA-Z]
+IDENT   {LETTER}({LETTER}|{DIGIT}|_)*
+WS      [ \t]
+NEWLINE \n
 
 %%
 
-// Palavras-chave mapeadas para campos do cfg_server_server
-SCHEDULER_PREEMPTIVE_DEADLINE   { SEND_TOKEN("KEYWORD", "SCHEDULER_PREEMPTIVE_DEADLINE"); return TOKEN_IDENT; }
-SLEEP_TIME                      { SEND_TOKEN("KEYWORD", "SLEEP_TIME"); return TOKEN_IDENT; }
-SESSION_SIZE                    { SEND_TOKEN("KEYWORD", "SESSION_SIZE"); return TOKEN_IDENT; }
-CIRCLE_BUFFER_SIZE              { SEND_TOKEN("KEYWORD", "CIRCLE_BUFFER_SIZE"); return TOKEN_IDENT; }
-MAX_PORTS                       { SEND_TOKEN("KEYWORD", "MAX_PORTS"); return TOKEN_IDENT; }
-REAL_TIME_DEAD_LINE             { SEND_TOKEN("KEYWORD", "REAL_TIME_DEAD_LINE"); return TOKEN_IDENT; }
-REAL_TIME_USER_DEFINED          { SEND_TOKEN("KEYWORD", "REAL_TIME_USER_DEFINED"); return TOKEN_IDENT; }
-TRUNK_ACCEPT_URI                { SEND_TOKEN("KEYWORD", "TRUNK_ACCEPT_URI"); return TOKEN_IDENT; }
-TRUNK_DISPATCH_URI              { SEND_TOKEN("KEYWORD", "TRUNK_DISPATCH_URI"); return TOKEN_IDENT; }
+"SESSION_SIZE"                  { SEND_TOKEN("KEYWORD", "SESSION_SIZE"); return TOKEN_IDENT; }
+"SLEEP_TIME"                    { SEND_TOKEN("KEYWORD", "SLEEP_TIME"); return TOKEN_IDENT; }
+"CIRCLE_BUFFER_SIZE"            { SEND_TOKEN("KEYWORD", "CIRCLE_BUFFER_SIZE"); return TOKEN_IDENT; }
+"MAX_PORTS"                     { SEND_TOKEN("KEYWORD", "MAX_PORTS"); return TOKEN_IDENT; }
+"REAL_TIME_DEAD_LINE"           { SEND_TOKEN("KEYWORD", "REAL_TIME_DEAD_LINE"); return TOKEN_IDENT; }
+"REAL_TIME_USER_DEFINED"        { SEND_TOKEN("KEYWORD", "REAL_TIME_USER_DEFINED"); return TOKEN_IDENT; }
+"TRUNK_ACCEPT_URI"              { SEND_TOKEN("KEYWORD", "TRUNK_ACCEPT_URI"); return TOKEN_IDENT; }
+"TRUNK_DISPATCH_URI"            { SEND_TOKEN("KEYWORD", "TRUNK_DISPATCH_URI"); return TOKEN_IDENT; }
+"SCHEDULER_PREEMPTIVE_DEADLINE" { SEND_TOKEN("KEYWORD", "SCHEDULER_PREEMPTIVE_DEADLINE"); return TOKEN_IDENT; }
+"RB_LOG_LEVEL"                  { SEND_TOKEN("KEYWORD", "SCHEDULER_PREEMPTIVE_DEADLINE"); return TOKEN_IDENT; }
 
-
-[0-9]+ {
+{DIGIT}+ {
     SEND_TOKEN("NUMBER", yytext);
     return TOKEN_NUMBER;
 }
@@ -50,29 +52,22 @@ TRUNK_DISPATCH_URI              { SEND_TOKEN("KEYWORD", "TRUNK_DISPATCH_URI"); r
     return TOKEN_SYMBOL;
 }
 
-// Identificadores genéricos
-[a-zA-Z_][a-zA-Z0-9_]* {
+{IDENT} {
     SEND_TOKEN("IDENT", yytext);
     return TOKEN_IDENT;
 }
 
-// Strings entre aspas (não usadas no parser atual, mas deixadas por compatibilidade)
-\"[^\"]*\" {
+\"([^\\\"]|\\.)*\" {
     SEND_TOKEN("STRING", yytext);
     return TOKEN_STRING;
 }
 
-// Ignora espaços, tabs, quebras de linha
-[ \t\n\r]+  { /* skip */ }
+{WS}+    { /* Ignorar espacos */ }
+{NEWLINE} { /* Ignorar novas linhas */ }
 
-// Qualquer outro símbolo inesperado
 . {
-    SEND_TOKEN("SYMBOL", yytext);
-    return TOKEN_SYMBOL;
+    SEND_TOKEN("INVALID", yytext);
+    return TOKEN_ERROR;
 }
 
 %%
-
-int yywrap(void) {
-    return 1;
-}

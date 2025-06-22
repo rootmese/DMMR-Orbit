@@ -85,6 +85,14 @@ typedef enum {
     TOKEN_EQUALS
 } dmmt_token_type;
 
+typedef enum {
+    rb_log_level_fatal = 0x01,
+    rb_log_level_error = 0x02,
+    rb_log_level_warn  = 0x04,
+    rb_log_level_info  = 0x08,
+    rb_log_level_debug = 0x10
+} rb_log_level;
+
 struct node {
     uint64_t arrival;
     uint64_t deadline;
@@ -169,12 +177,40 @@ struct cfg_server_server{
     uint16_t session_size;
     uint32_t circle_buffer_size;
     uint16_t max_ports;
-    uint16_t __filler1;
+    uint8_t log_level;
+    uint8_t __filler1;
     uint64_t real_time_dead_line;
     uint64_t real_time_user_defined;
     uint8_t trunk_accept_uri[0x40];
     uint8_t trunk_dispatch_uri[0x40];
 };
+
+#ifndef __RB_LOG_ENABLE__
+#define __RB_LOG_ENABLE__
+static inline int rb_log_enabled(uint8_t __m, rb_log_level __l) {
+    return (__m & __l);
+}
+#endif
+
+#ifndef __RB_LOG_LEVEL_NAME__
+#define __RB_LOG_LEVEL_NAME__
+static inline const char* rb_log_level_name(rb_log_level __l) {
+    switch(__l) {
+        case rb_log_level_fatal:
+            return "FATAL";
+        case rb_log_level_error:
+            return "ERROR";
+        case rb_log_level_warn:
+            return "WARN";
+        case rb_log_level_info:
+            return "INFO";
+        case rb_log_level_debug:
+            return "DEBUG";
+        default:
+            return "???";
+    }
+}
+#endif
 
 struct session_connection_pool {
     uint8_t run;

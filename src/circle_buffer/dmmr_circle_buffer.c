@@ -138,12 +138,11 @@ void stop(void){
     if(this){
         run = 0;
         sleep(1);
+        pthread_join(this->fifo_thread, 0);
         pthread_mutex_destroy(&this->fifo_lock);
         if(buffer)
             free(buffer);
-        free(this);
         this = 0;
-
     }
 }
 

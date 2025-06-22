@@ -31,25 +31,25 @@ static void daemonize(void) {
     pid = fork();
     switch (pid) {
         case 0:
+            umask(0);
+            chdir("/");
+            close(STDIN_FILENO);
+            close(STDOUT_FILENO);
+            close(STDERR_FILENO);
+            int fd = open("/dev/null", O_RDWR);
+            if (fd >= 0) {
+                dup2(fd, STDIN_FILENO);
+                dup2(fd, STDOUT_FILENO);
+                dup2(fd, STDERR_FILENO);
+                if (fd > STDERR_FILENO)
+                    close(fd);
+            }
             break;
         case EOF:
             fprintf(stderr, "Fork error: %s\n", strerror(errno));
             exit(EOF);
         default:
             exit(0); // pai sai
-    }
-    umask(0);
-    chdir("/");
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-    int fd = open("/dev/null", O_RDWR);
-    if (fd >= 0) {
-        dup2(fd, STDIN_FILENO);
-        dup2(fd, STDOUT_FILENO);
-        dup2(fd, STDERR_FILENO);
-        if (fd > STDERR_FILENO)
-            close(fd);
     }
 }
 
