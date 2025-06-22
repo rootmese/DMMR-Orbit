@@ -81,44 +81,57 @@ static void* receiver_thread(void* arg) {
 }
 
 int udp_send_to_client(struct node *n, size_t n_len) {
-    if (!n || n_len == 0)
+    if (!n || n_len == 0 || n_len > 16)  // Limite máximo garantido
         return EOF;
 
-    struct node *n0 = n, *n1 = n0 + n_len;
-    do {
-        struct iovec iov[1] = {
-            { .iov_base = n0->value, .iov_len = n0->value_size }
-        };
+    const int fd = n[0].fd;  // Assume mesmo FD para todos (como no TCP)
+    const sa_family_t family = n[0].family;  // Assume mesma família
+    
+    union {
+        struct sockaddr_in ipv4;
+        struct sockaddr_in6 ipv6;
+    } dest_addr;
 
-        union {
-            struct sockaddr_in ipv4;
-            struct sockaddr_in6 ipv6;
-        } dest_addr_storage;
+    // Configura endereço apenas uma vez
+    if (family == AF_INET) {
+        dest_addr.ipv4.sin_family = AF_INET;
+        dest_addr.ipv4.sin_port = htons(n[0].port);
+        __vcpy(&dest_addr.ipv4.sin_addr, &n[0].ipv4, sizeof(struct in_addr));
+    } else if (family == AF_INET6) {
+        dest_addr.ipv6.sin6_family = AF_INET6;
+        dest_addr.ipv6.sin6_port = htons(n[0].port);
+        __vcpy(&dest_addr.ipv6.sin6_addr, &n[0].ipv6, sizeof(struct in6_addr));
+    } else {
+        return EOF;
+    }
 
-        struct msghdr msg;
-        __mset(&msg, 0, sizeof(msg));
+    // Prepara todos os iovecs de uma vez
+    struct iovec iovs[16];
+    for (size_t i = 0; i < n_len; i++) {
+        iovs[i].iov_base = n[i].value;
+        iovs[i].iov_len = n[i].value_size;
+    }
 
-        if (n0->family == AF_INET) {
-            dest_addr_storage.ipv4.sin_family = AF_INET;
-            dest_addr_storage.ipv4.sin_port = htons(n0->port);
-            __vcpy(&dest_addr_storage.ipv4.sin_addr, &n0->ipv4, sizeof(struct in_addr));
-            msg.msg_name = &dest_addr_storage.ipv4;
-            msg.msg_namelen = sizeof(dest_addr_storage.ipv4);
-        } else if (n0->family == AF_INET6) {
-            dest_addr_storage.ipv6.sin6_family = AF_INET6;
-            dest_addr_storage.ipv6.sin6_port = htons(n0->port);
-            __vcpy(&dest_addr_storage.ipv6.sin6_addr, &n0->ipv6, sizeof(struct in6_addr));
-            msg.msg_name = &dest_addr_storage.ipv6;
-            msg.msg_namelen = sizeof(dest_addr_storage.ipv6);
-        } else
-            return EOF;
+    // Monta mensagem única
+    struct msghdr msg;
+    __mset(&msg, 0, sizeof(msg));
+    msg.msg_name = &dest_addr;
+    msg.msg_namelen = (family == AF_INET) ? sizeof(dest_addr.ipv4) : sizeof(dest_addr.ipv6);
+    msg.msg_iov = iovs;
+    msg.msg_iovlen = n_len;  // Envia todos os buffers de uma vez!
 
-        msg.msg_iov = iov;
-        msg.msg_iovlen = 1;
-        (void)sendmsg(n0->fd, &msg, 0);
-
-    } while (++n0 < n1);
-
+    // Envio vetorizado único
+    ssize_t sent = sendmsg(fd, &msg, 0);
+    
+    if (sent < 0) {
+        switch(errno) {
+            case EAGAIN:
+            case EINTR:
+                break;  // Erros recuperáveis
+            default:
+                return EOF;  // Erro fatal
+        }
+    }
     return 0;
 }
 

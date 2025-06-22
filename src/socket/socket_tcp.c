@@ -78,25 +78,27 @@ void delete_tcp_node(struct tcp_node *node) {
     pthread_mutex_unlock(&tcp_node_mutex);
 }
 
-int tcp_send_to_client(struct node *n,  size_t n_len) {
-    if (!n || n_len == 0)
+int tcp_send_to_client(struct node *n, size_t n_len) {
+    if (!n || n_len == 0 || n_len > 16) 
         return EOF;
-    struct iovec iov[1];
-    struct node *n0 = n, *n1 = n0 + n_len;
-    do {
-        iov[0].iov_base = n0->value;
-        iov[0].iov_len = n0->value_size;
-        ssize_t sent = writev(n0->fd, iov, 1);
-        if (sent < 0) {
-            switch(errno) {
-                case EAGAIN:
-                case EINTR:
-                    break;
-                default:
-                    return EOF;
-            }
+
+    const int fd = n[0].fd;
+    struct iovec iovs[16];
+    size_t i = 0;
+    for (struct node *current = n; i < n_len; current++, i++) {
+        iovs[i].iov_base = current->value;
+        iovs[i].iov_len = current->value_size;
+    }
+    ssize_t sent = writev(fd, iovs, i);
+    if (sent == EOF) {
+        switch(errno) {
+            case EAGAIN:
+            case EINTR:
+                break;
+            default:
+                return EOF;
         }
-    } while(++n0 < n1);
+    }
     return 0;
 }
 
