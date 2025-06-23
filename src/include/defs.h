@@ -115,6 +115,8 @@ struct node_buffer{
 };
 
 struct node_recv_manager{
+    uint8_t next_free_index;
+    uint8_t next_busy_index;
 	struct node_buffer buffer[0x100];
 	pthread_mutex_t mutex;
 };
@@ -230,6 +232,7 @@ struct scheduler_connection {
     uint64_t last_active_time_us;
     uint64_t realtime_deadline_us;
     uint64_t deadline_us;
+    pthread_mutex_t mutex;
     struct session_connection_pool *session_ptr; // <-- ponteiro direto para a session_connection real
 };
 

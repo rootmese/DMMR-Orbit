@@ -99,22 +99,26 @@ static void delete_union_protocol_base_cb(union protocol_base_cb *u){
     }
 } 
 
-static void on_receive_connection_cb(struct node_recv_manager *nrm){
-    if(nrm){
-        unsigned count;
-        struct node *n;
-        struct node_fifo_buffer *nb = 0;
-        nb = get_struct_node_buffer();
+static void on_receive_connection_cb(struct node_recv_manager *nrm) {
+    if (nrm) {
         pthread_mutex_lock(&(nrm->mutex));
         uint8_t pos = 0;
-        while(n = get_buzy_node(nrm, &pos)){
-            pthread_mutex_lock(&(circle_buffer->fifo_lock));
-            __vcpy(&(nb->n), n, sizeof(struct node));
+
+        pthread_mutex_lock(&(circle_buffer->fifo_lock));
+        do {
+            struct node *n = get_buzy_node(nrm, &pos);
+            if (!n)
+                break;
+
+            struct node_fifo_buffer *nb = get_struct_node_buffer();
+            if (!nb)
+                break;
+            nb->n = ;
             TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
-            pthread_mutex_unlock(&(circle_buffer->fifo_lock));
-        };
+            pthread_cond_signal(&circle_buffer->fifo_cond);
+        }while(!0);
+        pthread_mutex_unlock(&(circle_buffer->fifo_lock));
         pthread_mutex_unlock(&(nrm->mutex));
-        __delete_struct_node_buffer(nb);
     }
 }
 

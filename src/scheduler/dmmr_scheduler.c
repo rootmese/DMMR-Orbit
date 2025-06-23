@@ -24,23 +24,25 @@ static inline  uint64_t _get_monotonic_time_us() {
     return ((uint64_t)ts.tv_sec * 1000000ULL) + (ts.tv_nsec / 1000);
 }
 
-static int ensure_capacity(void) {
-    if (scheduler_connection_count >= scheduler_connection_size)
-    {
-        pthread_mutex_lock(&slots_mutex);
-        scheduler_connection_size *= 2;
-        struct scheduler_connection *new_slots = realloc(slots, scheduler_connection_size * sizeof(struct scheduler_connection));
-        if (!new_slots)
-        {
+static struct scheduler_connection *get_scheduler_connection(void){
+    register struct scheduler_connection *p = slots, *p1 = p + scheduler_connection_count;
+    pthread_mutex_lock(&slots_mutex);
+    for (; p < p1; ++p)
+        if(!(p->session_ptr) || !(p->session_ptr->run)){
             pthread_mutex_unlock(&slots_mutex);
-            return EOF;
+            return p;
         }
-        slots = new_slots;
-        pthread_mutex_unlock(&slots_mutex);
-        return 0;
+    if(scheduler_connection_count >= scheduler_connection_size){
+        scheduler_connection_size *= 2;
+        slots = (struct scheduler_connection*)realloc(slots, scheduler_connection_size * sizeof(struct scheduler_connection));
+        if(!slots){
+            pthread_mutex_unlock(&slots_mutex);
+            return 0;
+        }
     }
-    else
-        return 0;
+    struct scheduler_connection *ret = slots + scheduler_connection_count++;
+    pthread_mutex_unlock(&slots_mutex);
+    return ret;
 }
 
 static void* _reorder_thread(void* arg) {
@@ -100,12 +102,7 @@ static void sched_trigger_snd(struct scheduler_connection* conn) {
     if (!pool || !u)
         return;
     pthread_mutex_lock(&pool->mutex);
-    unsigned count = 0;
-    struct node *n0 = pool->pool, *n1 = n0 + pool->pool_count;
-    do{
-        ++count;
-    }while(++n0 < n1);
-    this->sock->dispatcher(&(pool->session), pool->pool, count);
+    this->sock->dispatcher(&(pool->session), pool->pool, pool->pool_count);
     pool->pool_count = 0;
     __mset(pool->pool, 0, pool->pool_size * sizeof(struct node));
     pthread_mutex_unlock(&pool->mutex);
@@ -124,21 +121,17 @@ static void sched_snd(struct scheduler_connection* conn, struct node *n, unsigne
     if (!pool || !u)
         return;
     pthread_mutex_lock(&(pool->mutex));
-    siz = ((pool->pool_size <= 6) ? (pool->pool_size) : (6));
-    struct node *n0 = n, *n1 = n0 + siz;
-    do{
-        this->sock->dispatcher(u, n0, s);
-    }while(++n0 < n1);
+    siz = ((pool->pool_size < 0x06) ? (pool->pool_size) : (0x06));
+    this->sock->dispatcher(u, n, siz);
     __bcpy(n + siz, n, (pool->pool_size - siz) * sizeof(struct node));
-    pthread_mutex_lock(&slots_mutex);
+    pool->pool_count -= siz;
+    pool->pool_size -= siz;
+    pthread_mutex_unlock(&(pool->mutex));
+    pthread_mutex_lock(&(conn->mutex));
     conn->last_active_time_us = n->arrival;
     conn->realtime_deadline_us = n->deadline;
     conn->deadline_us = n->deadline;
-    pool->pool_count -= siz;
-    pool->pool_size -= siz;
-    pthread_mutex_unlock(&slots_mutex);
-    pthread_mutex_unlock(&(pool->mutex));
-    
+    pthread_mutex_unlock(&(conn->mutex));
 }
 
 static void sched_reload(void){
@@ -178,19 +171,17 @@ static void sched_stop(void){
 }
 
 static int sched_insert(struct session_connection_pool *pool){
-    int ret = ensure_capacity();
-    if(ret)
-        return EOF;
-    else{
-        pthread_mutex_lock(&slots_mutex);
-        struct scheduler_connection *p = slots + scheduler_connection_count++;
+    if(pool){
+        struct scheduler_connection *p = get_scheduler_connection();
         p->session_ptr = pool;
         p->last_active_time_us = pool->pool->arrival;
         p->realtime_deadline_us = pool->pool->deadline;
         p->deadline_us = this->deadline;
-        pthread_mutex_unlock(&slots_mutex);
+        pthread_mutex_init(&(p->mutex), 0);
         return 0;
     }
+    else
+        return EOF;
 }
 
 static void sched_delete(struct session_connection_pool *pool){
@@ -198,8 +189,8 @@ static void sched_delete(struct session_connection_pool *pool){
     struct scheduler_connection *p0 = slots, *p1 = p0 + scheduler_connection_count;
     for (; p0 < p1; ++p0)
             if (p0->session_ptr == pool){
-                __bcpy(p0 + 1, p0, (p1 - (p0 + 1)) * sizeof(struct scheduler_connection));
-                --scheduler_connection_count;
+                pthread_mutex_destroy(&(p0->mutex));
+                __mset(p0, 0, sizeof(struct scheduler_connection));
                 break;
             }
     pthread_mutex_unlock(&slots_mutex);

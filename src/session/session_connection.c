@@ -30,7 +30,7 @@ static void (*snd_cb)(union protocol_base_cb *session, struct node*, unsigned si
 
 struct session_connection_pool *get_recno_slot(void) {
     register struct session_connection_pool_recno *p = recno;
-    register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_size;
+    register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_count;
     pthread_mutex_lock(&session_connection_pool_mutex);
     for (; p < p1; ++p)
         if(!(p->pool && p->pool->run)){
@@ -53,6 +53,7 @@ struct session_connection_pool *get_recno_slot(void) {
 void delete_recno_slot(struct session_connection_pool *p){
     if(p){
     pthread_mutex_lock(&session_connection_pool_mutex);
+    pthread_mutex_destroy(&(p->mutex));
     __mset(p, 0, sizeof(struct session_connection_pool));
     pthread_mutex_unlock(&session_connection_pool_mutex);
     }

@@ -34,11 +34,11 @@ static inline int __is_behind_cursor(struct node_circle_buffer *cur) {
     intptr_t end = (intptr_t)(buffer + cfg->circle_buffer_size);
 
     if (a == b)
-        return 0; // t· em cima do cursor, n„o È seguro
+        return 0; // t√° em cima do cursor, n√£o √© seguro
     else if (a < b)
-        return (b - a) < (end - base); // t· atr·s, sem wrap
+        return (b - a) < (end - base); // t√° atr√°s, sem wrap
     else
-        return ((end - a) + (b - base)) < (end - base); // wrap: t· atr·s se a dist‚ncia for < buffer
+        return ((end - a) + (b - base)) < (end - base); // wrap: t√° atr√°s se a dist√¢ncia for < buffer
 }
 
 static inline int is_behind_cursor(struct node_circle_buffer *cur){
@@ -55,34 +55,47 @@ static inline void foward_current_node(void){
 }
 
 static void* fifo_worker(void* arg) {
-    const int MAX_BATCH = 0x400; //valor ser· caso de estudo, tuning via compilaÁ„o
+    const int MAX_BATCH = 0x400;
     struct node_circle_buffer *slot = 0;
-    struct node_fifo_buffer **batch_ptr = 0;
     struct node_fifo_buffer *batch[MAX_BATCH];
     struct node_fifo_buffer **b = batch;
+    struct node_fifo_buffer **batch_ptr;
+    struct timespec ts;
+
     do {
-        b = batch;
         pthread_mutex_lock(&this->fifo_lock);
+        while (TAILQ_EMPTY(&this->fifo) && run) {
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += 10000;  // 10Œºs timeout
+            if (ts.tv_nsec >= 1000000000) {
+                ts.tv_sec += 1;
+                ts.tv_nsec -= 1000000000;
+            }
+            pthread_cond_timedwait(&(this->fifo_cond), &(this->fifo_lock), &ts);
+        }
+        if (!run) {
+            pthread_mutex_unlock(&this->fifo_lock);
+            break;
+        }
         while (!TAILQ_EMPTY(&this->fifo) && (b - batch) < MAX_BATCH) {
             *b = TAILQ_FIRST(&this->fifo);
             TAILQ_REMOVE(&this->fifo, *b, tailq);
             ++b;
         }
         pthread_mutex_unlock(&this->fifo_lock);
-        if (b != batch) {
+        if (b > batch) {
             batch_ptr = batch;
             do {
                 slot = __get_current_node();
                 if (slot && *batch_ptr)
                     __vcpy(slot, &(*batch_ptr)->n, sizeof(struct node));
-                foward_current_node(); // Avoid overrun in sessions
+                foward_current_node();
             } while (++batch_ptr < b);
         }
-        NSLEEP_US(10);
     } while (run);
-
     return 0;
 }
+
 
 
 static struct node_circle_buffer *iterate(struct node_circle_buffer *cursor, struct circleq_head *head) {
@@ -126,6 +139,7 @@ static int start(void){
 
         pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
         pthread_mutex_init(&this->fifo_lock, 0);
+        pthread_cond_init(&this->fifo_cond, 0);
         spawn_detached_thread_with_attr(&(this->fifo_thread), &attr, fifo_worker, this, &ret);
 
         return 0;
@@ -137,9 +151,11 @@ static int start(void){
 void stop(void){
     if(this){
         run = 0;
+        pthread_cond_broadcast(&this->fifo_cond);
         sleep(1);
         pthread_join(this->fifo_thread, 0);
         pthread_mutex_destroy(&this->fifo_lock);
+        pthread_cond_destroy(&this->fifo_cond);
         if(buffer)
             free(buffer);
         this = 0;
