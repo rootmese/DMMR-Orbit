@@ -9,6 +9,7 @@ struct dmmr_server {
     int (*run)(void);
     void (*stop)(void);
     int (*start)(void);
+    int (*reload)(void);
 };
 
 struct dmmr_server* new_dmmr_server(struct cfg_daemon_server*);

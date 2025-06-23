@@ -4,7 +4,7 @@
 
 struct tcp_node *get_tcp_node(void);
 
-int tcp_send_to_client(struct node*,  size_t);
+int tcp_send_to_client(struct tcp_node*, struct node*,  size_t);
 
 int start_tcp_service(struct tcp_node*);
 

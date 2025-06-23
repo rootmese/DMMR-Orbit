@@ -3,7 +3,7 @@
 
 struct udp_node *get_udp_node(void);
 
-int udp_send_to_client(struct node*, size_t);
+int udp_send_to_client(struct udp_node*, struct node*, size_t);
 
 int start_udp_service(struct udp_node*);
 

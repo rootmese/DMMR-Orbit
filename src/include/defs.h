@@ -136,6 +136,7 @@ struct tcp_node {
     pthread_t accept_thread;
     struct tcp_node *parent;
     struct node_recv_manager recv_manager;
+    struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
     void (*on_accept_cb)(struct tcp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
     void (*on_close_cb)(struct tcp_node*); // TODO
@@ -153,6 +154,7 @@ struct udp_node {
     struct node node_cfg;
     pthread_t accept_thread;
     struct node_recv_manager recv_manager;
+    struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
     void (*on_accept_cb)(struct udp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
     void (*on_close_cb)(struct udp_node*); // TODO

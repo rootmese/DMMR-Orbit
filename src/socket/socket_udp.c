@@ -80,60 +80,46 @@ static void* receiver_thread(void* arg) {
     return 0;
 }
 
-int udp_send_to_client(struct node *n, size_t n_len) {
-    if (!n || n_len == 0 || n_len > 16)  // Limite máximo garantido
+int udp_send_to_client(struct udp_node *udp, struct node *n, size_t n_len) {
+    if (!udp || !n || !n_len || n_len > 0x06)
         return EOF;
 
-    const int fd = n[0].fd;  // Assume mesmo FD para todos (como no TCP)
-    const sa_family_t family = n[0].family;  // Assume mesma família
-    
+    const int fd = n->fd;
+    const sa_family_t family = n->family;
+
     union {
         struct sockaddr_in ipv4;
         struct sockaddr_in6 ipv6;
     } dest_addr;
 
-    // Configura endereço apenas uma vez
     if (family == AF_INET) {
         dest_addr.ipv4.sin_family = AF_INET;
         dest_addr.ipv4.sin_port = htons(n[0].port);
         __vcpy(&dest_addr.ipv4.sin_addr, &n[0].ipv4, sizeof(struct in_addr));
-    } else if (family == AF_INET6) {
+    } else {
         dest_addr.ipv6.sin6_family = AF_INET6;
         dest_addr.ipv6.sin6_port = htons(n[0].port);
         __vcpy(&dest_addr.ipv6.sin6_addr, &n[0].ipv6, sizeof(struct in6_addr));
-    } else {
-        return EOF;
     }
 
-    // Prepara todos os iovecs de uma vez
-    struct iovec iovs[16];
-    for (size_t i = 0; i < n_len; i++) {
-        iovs[i].iov_base = n[i].value;
-        iovs[i].iov_len = n[i].value_size;
-    }
+    struct node *n0 = n, *n1 = n0 + n_len;
+    struct iovec *io0 = udp->iovs;
+    do {
+        io0->iov_base = n0->value;
+        io0->iov_len = n0->value_size;
+        ++io0;
+    }while(++n0 < n1);
 
-    // Monta mensagem única
-    struct msghdr msg;
-    __mset(&msg, 0, sizeof(msg));
+    struct msghdr msg = {0};
     msg.msg_name = &dest_addr;
     msg.msg_namelen = (family == AF_INET) ? sizeof(dest_addr.ipv4) : sizeof(dest_addr.ipv6);
-    msg.msg_iov = iovs;
-    msg.msg_iovlen = n_len;  // Envia todos os buffers de uma vez!
+    msg.msg_iov = udp->iovs;
+    msg.msg_iovlen = n_len;
 
-    // Envio vetorizado único
     ssize_t sent = sendmsg(fd, &msg, 0);
-    
-    if (sent < 0) {
-        switch(errno) {
-            case EAGAIN:
-            case EINTR:
-                break;  // Erros recuperáveis
-            default:
-                return EOF;  // Erro fatal
-        }
-    }
-    return 0;
+    return (sent < 0 && errno != EAGAIN && errno != EINTR) ? EOF : 0;
 }
+
 
 int udp_server_is_active(void) {
     return (udp_pool) ? (!0) : (0);

@@ -26,7 +26,7 @@ struct dmmr_circle_buffer {
     pthread_mutex_t fifo_lock;
     pthread_t fifo_thread;
     int (*start)(void);
-    void  (*stop)(void);
+    void (*stop)(void);
     int (*is_behind_cursor)(struct node_circle_buffer*);
     struct node_circle_buffer* (*get_current_node)(void);
     struct node_circle_buffer* (*iterate)(struct node_circle_buffer *cursor, struct circleq_head *head);

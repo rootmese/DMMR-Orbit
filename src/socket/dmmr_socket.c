@@ -118,12 +118,12 @@ static void on_receive_connection_cb(struct node_recv_manager *nrm){
     }
 }
 
-static inline void dispatcher_udp(struct node *n, unsigned nl){
-    (void)udp_send_to_client(n, nl);
+static inline void dispatcher_udp(struct udp_node *udp, struct node *n, unsigned nl){
+    (void)udp_send_to_client(udp, n, nl);
 }
 
-static inline void dispatcher_tcp(struct node *n, unsigned nl){
-    (void)tcp_send_to_client(n, nl);
+static inline void dispatcher_tcp(struct tcp_node *tcp, struct node *n, unsigned nl){
+    (void)tcp_send_to_client(tcp, n, nl);
 }
 
 static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
