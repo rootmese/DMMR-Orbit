@@ -40,6 +40,8 @@
 #ifndef __SPAW_DETACHED_THREADS_H__
 #define __SPAW_DETACHED_THREADS_H__
 
+union protocol_base_cb;
+
 
 static inline void spawn_detached_thread(pthread_t *t, void *(*fn)(void *), void *arg, int *ret)
 {
@@ -138,8 +140,10 @@ struct tcp_node {
     pthread_t accept_thread;
     struct tcp_node *parent;
     struct node_recv_manager recv_manager;
+    union protocol_base_cb *linked;
     struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
     void (*on_accept_cb)(struct tcp_node*);
+    void (*on_connect_cb)(struct tcp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
     void (*on_close_cb)(struct tcp_node*); // TODO
 };
@@ -157,7 +161,9 @@ struct udp_node {
     pthread_t accept_thread;
     struct node_recv_manager recv_manager;
     struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
+    union protocol_base_cb *linked;
     void (*on_accept_cb)(struct udp_node*);
+    void (*on_connect_cb)(struct udp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
     void (*on_close_cb)(struct udp_node*); // TODO
 };
@@ -168,7 +174,6 @@ union protocol_base_cb{
     struct tcp_node tcp;
     struct udp_node udp;
 };
-
 
 struct cfg_daemon_server {
     uint8_t  cfg_file[0x400];
@@ -235,5 +240,28 @@ struct scheduler_connection {
     pthread_mutex_t mutex;
     struct session_connection_pool *session_ptr; // <-- ponteiro direto para a session_connection real
 };
+
+#ifndef __GET_SESSION_POINTER__
+#define __GET_SESSION_POINTER__
+
+static inline union protocol_base_cb *get_session_pointer(union protocol_base_cb *__u){
+    if(__u){
+        switch(__u->none.proto){
+            case proto_none_t:
+                return 0;
+            case proto_tcp_t:
+                return __u->tcp.linked;
+                break; /* Stupid break */
+            case proto_udp_t:
+                return __u->udp.linked;
+                break; /* Stupid break */
+            default:
+                return 0;
+                break; /* Stupid break */
+        }
+    }
+}
+
+#endif
 
 #endif

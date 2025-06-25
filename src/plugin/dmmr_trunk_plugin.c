@@ -6,13 +6,24 @@
 static struct dmmr_session_connection_manager *sm = 0;
 static struct cfg_server_server *cfg = 0;
 static struct dmmr_plugin *this = 0;
+static uint64_t node_id = 0;
 
+static void on_close_connection_udp_cb(struct udp_node *input){
+    sm->sm_delete_session((union protocol_base_cb*)input);
+}
+
+static void on_close_connection_tcp_cb(struct tcp_node *input){
+    if(sm)
+        sm->sm_delete_session((union protocol_base_cb*)input);
+}
+
+// Not used for now
 static void on_dispatch_connection_udp_cb(struct udp_node *input) {
     int ret;
     if (input) {
         struct session_connection_pool *p = get_recno_slot();
         if (p) {
-            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
+            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));;
             ret = sm->insert_session(p);
             if (!ret) {
                 sm->insert_scheduler(p);
@@ -21,6 +32,7 @@ static void on_dispatch_connection_udp_cb(struct udp_node *input) {
     }
 }
 
+// Not used for now
 static void on_dispatch_connection_tcp_cb(struct tcp_node *input) {
     int ret;
     if (input) {
@@ -35,19 +47,61 @@ static void on_dispatch_connection_tcp_cb(struct tcp_node *input) {
     }
 }
 
+static void on_connect_connection_udp_cb(struct udp_node *input) {
+    int ret;
+    if (input) {
+        struct session_connection_pool *p = get_recno_slot();
+        if (p) {
+            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
+            input->linked = &(p->session);
+            p->session.udp.linked = (union protocol_base_cb*)input;
+            p->session.udp.proto = proto_udp_t;
+            ret = sm->insert_session(p);
+            if (!ret) {
+                sm->insert_scheduler(p);
+            }
+        }
+    }
+}
+
+static void on_connect_connection_tcp_cb(struct tcp_node *input) {
+    int ret;
+    if (input) {
+        struct session_connection_pool *p = get_recno_slot();
+        if (p) {
+            __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
+            input->linked = &(p->session);
+            p->session.tcp.linked = (union protocol_base_cb*)input;
+            p->session.tcp.proto = proto_tcp_t;
+            ret = sm->insert_session(p);
+            if (!ret) {
+                sm->insert_scheduler(p);
+            }
+        }
+    }
+}
+
 static void on_acception_connection_udp_cb(struct udp_node *input) {
     int ret;
     if (input) {
         struct session_connection_pool *p = get_recno_slot();
         if (p) {
             __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
+            p->session.udp.linked = (union protocol_base_cb*)input;
+            p->session.udp.proto = proto_udp_t;
             ret = sm->insert_session(p);
             if (!ret) {
                 ret = sm->insert_scheduler(p);
                 if (!ret) {
-                    sm->set_socket_dispatch_cb_udp(on_dispatch_connection_udp_cb);
-                    sm->set_socket_dispatch_cb_tcp(on_dispatch_connection_tcp_cb);
-                    sm->socket_create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
+                    sm->socket_create_dispatcher_from_uri(
+                        cfg->trunk_dispatch_uri,
+                        on_dispatch_connection_udp_cb,
+                        on_dispatch_connection_tcp_cb,
+                        on_connect_connection_udp_cb,
+                        on_connect_connection_tcp_cb,
+                        on_close_connection_udp_cb,
+                        on_close_connection_tcp_cb
+                    );
                 }
             }
         }
@@ -60,13 +114,21 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input) {
         struct session_connection_pool *p = get_recno_slot();
         if (p) {
             __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
+            p->session.tcp.linked = (union protocol_base_cb*)input;
+            p->session.tcp.proto = proto_tcp_t;
             ret = sm->insert_session(p);
             if (!ret) {
                 ret = sm->insert_scheduler(p);
                 if (!ret) {
-                    sm->set_socket_dispatch_cb_udp(on_dispatch_connection_udp_cb);
-                    sm->set_socket_dispatch_cb_tcp(on_dispatch_connection_tcp_cb);
-                    sm->socket_create_dispatcher_from_uri(cfg->trunk_dispatch_uri);
+                    sm->socket_create_dispatcher_from_uri(
+                        cfg->trunk_dispatch_uri,
+                        on_dispatch_connection_udp_cb,
+                        on_dispatch_connection_tcp_cb,
+                        on_connect_connection_udp_cb,
+                        on_connect_connection_tcp_cb,
+                        on_close_connection_udp_cb,
+                        on_close_connection_tcp_cb
+                    );
                 }
             }
         }
@@ -78,9 +140,15 @@ static void dmmr_plugin_reload(void){
 
 static void dmmr_plugin_load(void) {
     if (sm && cfg) {
-        sm->set_socket_acception_cb_udp(on_acception_connection_udp_cb);
-        sm->set_socket_acception_cb_tcp(on_acception_connection_tcp_cb);
-        (void)sm->socket_start_accept_from_uri(cfg->trunk_accept_uri);
+        (void)sm->socket_start_accept_from_uri(
+            cfg->trunk_accept_uri,
+            on_acception_connection_udp_cb,
+            on_acception_connection_tcp_cb,
+            on_connect_connection_udp_cb,
+            on_connect_connection_tcp_cb,
+            on_close_connection_udp_cb,
+            on_close_connection_tcp_cb
+        );
     }
 }
 

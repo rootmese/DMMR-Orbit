@@ -12,23 +12,6 @@ static struct dmmr_scheduler* _sched = 0;
 static struct dmmr_socket* _sock = 0;
 static struct dmmr_session_connection_manager* _this = 0;
 
-static int socket_accept(const unsigned char *uri) {
-    if (uri) {
-        uint16_t port;
-        unsigned char host_buf[0x100];
-        __mset(host_buf, 0, sizeof(host_buf));
-        proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
-        switch (proto) {
-            case proto_none_t:
-                return EOF;
-            case proto_udp_t:
-            case proto_tcp_t:
-                return _sock->start_acception(proto, port, (const char*)host_buf);
-        }
-    }
-    return EOF;
-}
-
 static int socket_connect(const unsigned char *uri) {
     // TODO: Implement connect logic
     return EOF;
@@ -52,29 +35,32 @@ static inline void session_delete_session(struct session_connection_pool *sessio
     }
 }
 
-static inline void socket_set_acception_cb_udp(void (*cb)(struct udp_node*)) {
-    _sock->set_acception_cb_udp = cb;
+static inline struct session_connection_pool* session_get_session(union protocol_base_cb *u){
+    return ((u) ? (get_session(u)) : (0));
 }
 
-static inline void socket_set_acception_cb_tcp(void (*cb)(struct tcp_node*)) {
-    _sock->set_acception_cb_tcp = cb;
+static inline int socket_start_accept_from_uri(
+    const unsigned char *uri,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+    ) {
+    return _sock->start_accept_from_uri(uri, on_accept_udp_cb, on_accept_tcp_cb, on_connect_udp_cb, on_connect_tcp_cb, on_close_udp_cb, on_close_tcp_cb);
 }
 
-static inline void socket_set_dispatch_cb_udp(void (*cb)(struct udp_node*)) {
-    _sock->set_acception_cb_udp = cb;
-}
-
-static inline void socket_set_dispatch_cb_tcp(void (*cb)(struct tcp_node*)) {
-    _sock->set_acception_cb_tcp = cb;
-}
-
-
-static inline int socket_start_accept_from_uri(const unsigned char *uri) {
-    return _sock->start_accept_from_uri(uri);
-}
-
-static inline int socket_create_dispatcher_from_uri(const unsigned char *uri) {
-    return _sock->create_dispatcher_from_uri(uri); // Se for outro método, ajustar nome
+static inline int socket_create_dispatcher_from_uri(
+    const unsigned char *uri,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+    ) {
+    return _sock->create_dispatcher_from_uri(uri, on_accept_udp_cb, on_accept_tcp_cb, on_connect_udp_cb, on_connect_tcp_cb, on_close_udp_cb, on_close_tcp_cb);
 }
 
 static inline int sched_insert(struct session_connection_pool *pool) {
@@ -83,6 +69,16 @@ static inline int sched_insert(struct session_connection_pool *pool) {
 
 static inline void sched_delete(struct session_connection_pool *pool) {
     _sched->delete(pool);
+}
+
+static inline void sm_delete_session(union protocol_base_cb *u){
+    if(u){
+        struct session_connection_pool *s = get_session(u);
+        if(s){
+            sched_delete(s);
+            delete_session(s, !0);
+        }
+    }
 }
 
 struct dmmr_session_connection_manager* new_session_connection_manager(
@@ -100,21 +96,18 @@ struct dmmr_session_connection_manager* new_session_connection_manager(
 
     cfg = css;
 
-    mgr->reload                               = 0;
-    mgr->trunk                                = trunk; // TODO future
-    mgr->accept                               = socket_accept;
-    mgr->connect                              = socket_connect;
-    mgr->close                                = socket_close;
-    mgr->socket_start_accept_from_uri         = socket_start_accept_from_uri;
-    mgr->socket_create_dispatcher_from_uri    = socket_create_dispatcher_from_uri;
-    mgr->set_socket_acception_cb_udp          = socket_set_acception_cb_udp;
-    mgr->set_socket_acception_cb_tcp          = socket_set_acception_cb_tcp;
-    mgr->set_socket_dispatch_cb_udp           = socket_set_dispatch_cb_udp;
-    mgr->set_socket_dispatch_cb_tcp           = socket_set_dispatch_cb_tcp;
-    mgr->insert_session                       = session_insert_session;
-    mgr->delete_session                       = session_delete_session;
-    mgr->insert_scheduler                     = sched_insert;
-    mgr->delete_scheduler                     = sched_delete;
+    mgr->reload                                = 0;
+    mgr->trunk                                 = trunk;
+    mgr->connect                               = socket_connect;
+    mgr->close                                 = socket_close;
+    mgr->sm_delete_session                     = sm_delete_session;
+    mgr->socket_start_accept_from_uri          = socket_start_accept_from_uri;
+    mgr->socket_create_dispatcher_from_uri     = socket_create_dispatcher_from_uri;
+    mgr->insert_session                        = session_insert_session;
+    mgr->delete_session                        = session_delete_session;
+    mgr->get_session                           = session_get_session;
+    mgr->insert_scheduler                      = sched_insert;
+    mgr->delete_scheduler                      = sched_delete;
 
     _circle_buffer = cb;
     _sched = sched;

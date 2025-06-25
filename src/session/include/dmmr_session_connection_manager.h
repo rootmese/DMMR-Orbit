@@ -14,13 +14,27 @@ struct dmmr_session_connection_manager{
 	void (*close)(const unsigned char*);
 	int (*send)(const unsigned char*, unsigned);
 	int (*receive)(const unsigned char*, unsigned*);
-	int (*socket_start_accept_from_uri)(const unsigned char*);
-	int (*socket_create_dispatcher_from_uri)(const unsigned char*);
+	int (*socket_start_accept_from_uri)(
+		const unsigned char*,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+		);
+	int (*socket_create_dispatcher_from_uri)(
+		const unsigned char*,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+		);
 	void (*trunk)(const unsigned char*, const unsigned char*);
-	void (*set_socket_acception_cb_tcp)(void (*on_accept_cb)(struct tcp_node*));
-	void (*set_socket_acception_cb_udp)(void (*on_accept_cb)(struct udp_node*));
-	void (*set_socket_dispatch_cb_tcp)(void (*on_accept_cb)(struct tcp_node*));
-	void (*set_socket_dispatch_cb_udp)(void (*on_accept_cb)(struct udp_node*));
+	void (*sm_delete_session)(union protocol_base_cb*);
+	struct session_connection_pool* (*get_session)(union protocol_base_cb*);
 	int (*insert_session)(struct session_connection_pool*);
 	void (*delete_session)(struct session_connection_pool*);
 	int (*insert_scheduler)(struct session_connection_pool*);

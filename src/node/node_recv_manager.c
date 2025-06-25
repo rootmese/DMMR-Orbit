@@ -7,8 +7,10 @@
 
 struct node *recicle_node(struct node_recv_manager *input, uint8_t pos){
 	if(input && pos && pos < 0x100){
+         pthread_mutex_lock(&input->mutex);
 		struct node_buffer *p = input->buffer + pos;
 		p->node_buffer_status = 0;
+        pthread_mutex_unlock(&input->mutex);
 	}
 	return 0;
 }

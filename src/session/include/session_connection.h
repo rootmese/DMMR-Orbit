@@ -10,6 +10,8 @@ void stop_session_connection(void);
 
 int reload_session_conection(void); //não será contemplado no MVC
 
+struct session_connection_pool *get_session(union protocol_base_cb*);
+
 int insert_session(struct session_connection_pool*);
 
 void delete_session(struct session_connection_pool*, int);

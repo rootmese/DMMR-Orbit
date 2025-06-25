@@ -98,11 +98,11 @@ static void sched_trigger_snd(struct scheduler_connection* conn) {
     if(!conn)
         return;
     struct session_connection_pool* pool = conn->session_ptr;
-    union protocol_base_cb *u = (&(pool->session));
+    union protocol_base_cb *u = get_session_pointer(&(pool->session));
     if (!pool || !u)
         return;
     pthread_mutex_lock(&pool->mutex);
-    this->sock->dispatcher(&(pool->session), pool->pool, pool->pool_count);
+    this->sock->dispatcher(u, pool->pool, pool->pool_count);
     pool->pool_count = 0;
     __mset(pool->pool, 0, pool->pool_size * sizeof(struct node));
     pthread_mutex_unlock(&pool->mutex);
@@ -117,7 +117,7 @@ static void sched_snd(struct scheduler_connection* conn, struct node *n, unsigne
         return;
     unsigned siz = 0;
     struct session_connection_pool* pool = conn->session_ptr;
-    union protocol_base_cb *u = (&(pool->session));
+    union protocol_base_cb *u = get_session_pointer(&(pool->session));
     if (!pool || !u)
         return;
     pthread_mutex_lock(&(pool->mutex));

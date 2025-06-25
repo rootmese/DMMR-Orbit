@@ -29,10 +29,6 @@ static struct dmmr_circle_buffer* circle_buffer = 0;
 
 static struct dmmr_socket *this = 0;
 
-static void (*on_accept_cb_udp)(struct udp_node*) = 0;
-
-static void (*on_accept_cb_tcp)(struct tcp_node*) = 0;
-
 static void (*on_receive_cb)(struct node*) = 0;
 
 static struct node_fifo_buffer *get_struct_node_buffer(void) {
@@ -40,7 +36,7 @@ static struct node_fifo_buffer *get_struct_node_buffer(void) {
     register struct node_fifo_buffer *p1 = p + nbuff_size;
     pthread_mutex_lock(&node_fifo_buffer_mutex);
     for (; p < p1; ++p)
-        if(!(p->n.fd)){
+        if(!(p->n->fd)){
             pthread_mutex_unlock(&node_fifo_buffer_mutex);
             return p;
         }
@@ -106,15 +102,14 @@ static void on_receive_connection_cb(struct node_recv_manager *nrm) {
 
         pthread_mutex_lock(&(circle_buffer->fifo_lock));
         do {
-            struct node *n = get_buzy_node(nrm, &pos);
-            if (!n)
-                break;
-
             struct node_fifo_buffer *nb = get_struct_node_buffer();
             if (!nb)
                 break;
-            nb->n = ;
-            TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq);
+            struct node *n = get_buzy_node(nrm, &pos);
+            if (!n)
+                break;
+            nb->n = n;
+            TAILQ_INSERT_TAIL(&(circle_buffer->fifo), nb, tailq); 
             pthread_cond_signal(&circle_buffer->fifo_cond);
         }while(!0);
         pthread_mutex_unlock(&(circle_buffer->fifo_lock));
@@ -131,13 +126,13 @@ static inline void dispatcher_tcp(struct tcp_node *tcp, struct node *n, unsigned
 }
 
 static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
-    if(n && nl){
+    if(u && n && nl){
         switch(u->none.proto){
             case proto_udp_t:
-                dispatcher_udp(n, nl);
+                dispatcher_udp(&(u->udp), n, nl);
                 break;
             case proto_tcp_t:
-                dispatcher_tcp(n, nl);
+                dispatcher_tcp(&(u->tcp), n, nl);
                 break;
             default:
                 break; /* Stupid break */
@@ -145,13 +140,19 @@ static void dispatcher(union protocol_base_cb *u, struct node *n, unsigned nl){
     }
 }
 
-static inline int start_dispatcher_udp(const char* ip, uint16_t port){
+static inline int start_dispatcher_udp(void){
     int ret = udp_server_is_active();
     if(!ret)
         (void)connect_udp_server();
 }
 
-static inline int start_dispatcher_tcp(const char* ip, uint16_t port){
+static inline int start_dispatcher_tcp(
+    const char* ip,
+    uint16_t port,
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+    void (*on_close_tcp_cb)(struct tcp_node*)
+    ){
     unsigned char buf[sizeof(struct sockaddr_in6)];
     union protocol_base_cb *cb = get_union_protocol_base_cb();
     if(cb){
@@ -170,14 +171,24 @@ static inline int start_dispatcher_tcp(const char* ip, uint16_t port){
         cb->tcp.proto = proto_tcp_t;
         cb->tcp.node_cfg.port = port;
         cb->tcp.node_cfg.family = type;
-        cb->tcp.on_accept_cb = on_accept_cb_tcp;
+        cb->tcp.on_accept_cb = on_accept_tcp_cb;
+        cb->tcp.on_connect_cb = on_connect_tcp_cb;
         cb->tcp.on_receive_cb = on_receive_connection_cb;
+        cb->tcp.on_close_cb = on_close_tcp_cb;
         ret = connect_tcp_server(&(cb->tcp));
         return (ret) ? (EOF) : (0);
-        }
     }
+}
 
-int create_dispatcher_from_uri(const unsigned char *uri){
+int create_dispatcher_from_uri(
+    const unsigned char *uri,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+    ){
     if(uri){
         uint16_t port;
         char host_buf[0x100];
@@ -185,18 +196,28 @@ int create_dispatcher_from_uri(const unsigned char *uri){
         proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
         switch (proto) {
             case proto_udp_t:
-                return start_dispatcher_udp(host_buf, port);
+                return start_dispatcher_udp();
                 break;
             case proto_tcp_t:
-                return start_dispatcher_tcp(host_buf, port);
+                return start_dispatcher_tcp(host_buf, port, on_accept_tcp_cb, on_connect_tcp_cb, on_close_tcp_cb);
                 break; /* Stupid Break */
         }
     }
     return EOF;
 }
 
-static int start_acception(proto_t proto, uint16_t port, const char* ip) {
-    int ret = -1;
+static int start_acception(
+    proto_t proto,
+    uint16_t port,
+    const char* ip,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+    ) {
+    int ret = EOF;
     union protocol_base_cb *cb;
 
     switch (proto) {
@@ -213,19 +234,19 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
                         __vcpy(&(cb->udp.node_cfg.ipv6), buf, sizeof(struct sockaddr_in6));
                         break;
                     default:
-                        return -1; // endereço inválido
+                        return EOF;
                 }
                 cb->udp.proto = proto_udp_t;
                 cb->udp.node_cfg.port = port;
                 cb->udp.node_cfg.family = type;
-                cb->udp.on_accept_cb = on_accept_cb_udp;
+                cb->udp.on_accept_cb = on_accept_udp_cb;
+                cb->udp.on_connect_cb = on_connect_udp_cb;
+                cb->udp.on_close_cb = on_close_udp_cb;
                 cb->udp.on_receive_cb = on_receive_connection_cb;
                 ret = start_udp_service(&(cb->udp));
-                
             }
-            break;  // fim case proto_udp_t
+            break; 
         }
-
         case proto_tcp_t: {
             unsigned char buf[sizeof(struct sockaddr_in6)];
             cb = get_union_protocol_base_cb();
@@ -239,48 +260,48 @@ static int start_acception(proto_t proto, uint16_t port, const char* ip) {
                         __vcpy(&(cb->tcp.node_cfg.ipv6), buf, sizeof(struct sockaddr_in6));
                         break;
                     default:
-                        return -1; // endereço inválido
+                        return EOF;
                 }
                 cb->tcp.proto = proto_tcp_t;
                 cb->tcp.node_cfg.port = port;
                 cb->tcp.node_cfg.family = type;
-                cb->tcp.on_accept_cb = on_accept_cb_tcp;
+                cb->tcp.on_accept_cb = on_accept_tcp_cb;
+                cb->tcp.on_connect_cb = on_connect_tcp_cb;
+                cb->tcp.on_close_cb = on_close_tcp_cb;
                 cb->tcp.on_receive_cb = on_receive_connection_cb;
                 ret = start_tcp_service(&(cb->tcp));
             }
-            break;  // fim case proto_tcp_t
+            break;
         }
-
         default:
-            return -1;  // protocolo inválido
-    }  // fim switch
-
+            return EOF;
+    }
     return ret;
-}  // fim função start_acception
+}
 
 
 
-static int start_accept_from_uri(const unsigned char *uri){
+static int start_accept_from_uri(
+    const unsigned char *uri,
+    void (*on_accept_udp_cb)(struct udp_node*),
+    void (*on_accept_tcp_cb)(struct tcp_node*),
+    void (*on_connect_udp_cb)(struct udp_node*),
+    void (*on_connect_tcp_cb)(struct tcp_node*),
+	void (*on_close_udp_cb)(struct udp_node*),
+	void (*on_close_tcp_cb)(struct tcp_node*)
+    ){
     if(uri){
         uint16_t port;
         char host_buf[0x100];
         __mset(host_buf, 0, sizeof(host_buf));
         proto_t proto = parse_protocol_host_port(uri, host_buf, sizeof(host_buf), &port);
         if(!(proto == proto_none_t))
-            return start_acception(proto, port, host_buf);
+            return start_acception(proto, port, host_buf, on_accept_udp_cb, on_accept_tcp_cb, on_connect_udp_cb, on_connect_tcp_cb, on_close_udp_cb, on_close_tcp_cb);
     }
     return EOF;
 }
 
 static void reload(void){
-}
-
-static void set_acceptioncb_udp(void (*on_accept_cb)(struct udp_node*)){
-    on_accept_cb_udp = on_accept_cb;
-}
-
-static void set_acceptioncb_tcp(void (*on_accept_cb)(struct tcp_node*)){
-    on_accept_cb_tcp = on_accept_cb;
 }
 
 void delete_dmmr_socket(void){

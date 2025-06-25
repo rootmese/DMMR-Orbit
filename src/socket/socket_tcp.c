@@ -79,18 +79,19 @@ void delete_tcp_node(struct tcp_node *node) {
 }
 
 int tcp_send_to_client(struct tcp_node *tcp, struct node *n, size_t n_len) {
-    if (!tcp || !n || !n_len || n_len > 0x06) 
+    if (!tcp || !n || !n_len) 
         return EOF;
 
     const int fd = n->fd;
-    struct node *n0 = n, *n1 = n0 + n_len;
+    size_t siz = ((n_len > 6) ? (6) : (n_len));
+    struct node *n0 = n, *n1 = n0 + siz;
     struct iovec *io0 = tcp->iovs;
     do {
         io0->iov_base = n0->value;
         io0->iov_len = n0->value_size;
         ++io0;
     }while(++n0 < n1);
-    ssize_t sent = writev(fd, tcp->iovs, n_len);
+    ssize_t sent = writev(fd, tcp->iovs, siz);
     if (sent == EOF) {
         switch(errno) {
             case EAGAIN:
@@ -114,7 +115,7 @@ static void* tcp_receiver_thread(void *arg) {
             struct node *n = get_free_node(&(tn->recv_manager), &pos);
             iov[0].iov_base = n->value;
             iov[0].iov_len = sizeof(n->value);
-            n->value_size = readv(n->fd, iov, 1);
+            n->value_size = readv(tn->node->fd, iov, 1);
             if (n->value_size <= 0) {
                 if (n->value_size < 0) {
                     switch (errno) {
@@ -214,7 +215,7 @@ static void *accept_thread(void *arg) {
                 if (!ret && node->on_accept_cb)
                     node->on_accept_cb(tn);
             } else {
-                delete_node(n); // fallback se falhar alocação de tcp_node
+                delete_node(n);
                 close(client_fd);
             }
         }
@@ -254,7 +255,6 @@ int connect_tcp_server(struct tcp_node *node) {
     n->fd = sock;
     n->family = node->node_cfg.family;
 
-    // 🛠️ Recupera o IP e porta local após conectar
     if (n->family == AF_INET) {
         struct sockaddr_in local_addr;
         socklen_t len = sizeof(local_addr);
@@ -276,14 +276,15 @@ int connect_tcp_server(struct tcp_node *node) {
         goto return_cleanup_node;
 
     tn->node = n;
+    tn->linked = node->linked;
     tn->node_count++;
     tn->run = !0;
     (void)init_node_recv_manager(&tn->recv_manager);
     tn->on_receive_cb = node->on_receive_cb;
 
     spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
-    if (!ret && node->on_accept_cb)
-        node->on_accept_cb(tn);
+    if (!ret && node->on_connect_cb)
+        node->on_connect_cb(tn);
 
     return 0;
 

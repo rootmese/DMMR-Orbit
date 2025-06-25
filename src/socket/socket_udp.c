@@ -81,7 +81,7 @@ static void* receiver_thread(void* arg) {
 }
 
 int udp_send_to_client(struct udp_node *udp, struct node *n, size_t n_len) {
-    if (!udp || !n || !n_len || n_len > 0x06)
+    if (!udp || !n || !n_len)
         return EOF;
 
     const int fd = n->fd;
@@ -101,8 +101,8 @@ int udp_send_to_client(struct udp_node *udp, struct node *n, size_t n_len) {
         dest_addr.ipv6.sin6_port = htons(n[0].port);
         __vcpy(&dest_addr.ipv6.sin6_addr, &n[0].ipv6, sizeof(struct in6_addr));
     }
-
-    struct node *n0 = n, *n1 = n0 + n_len;
+    size_t siz = ((n_len > 6) ? (6) : (n_len));
+    struct node *n0 = n, *n1 = n0 + siz;
     struct iovec *io0 = udp->iovs;
     do {
         io0->iov_base = n0->value;
@@ -114,7 +114,7 @@ int udp_send_to_client(struct udp_node *udp, struct node *n, size_t n_len) {
     msg.msg_name = &dest_addr;
     msg.msg_namelen = (family == AF_INET) ? sizeof(dest_addr.ipv4) : sizeof(dest_addr.ipv6);
     msg.msg_iov = udp->iovs;
-    msg.msg_iovlen = n_len;
+    msg.msg_iovlen = siz;
 
     ssize_t sent = sendmsg(fd, &msg, 0);
     return (sent < 0 && errno != EAGAIN && errno != EINTR) ? EOF : 0;
