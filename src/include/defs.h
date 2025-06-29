@@ -20,17 +20,7 @@
 #include <sys/uio.h>
 #include <sys/wait.h>
 
-#ifndef MTU_SIZE
-#define MTU_SIZE 1500
-#endif
-
-#ifndef TOKEN_BUCKET_SIZE
-#define TOKEN_BUCKET_SIZE 9000
-#endif
-
-#ifndef CIRCLE_BUFFER_SIZE
-#define CIRCLE_BUFFER_SIZE 9000
-#endif
+#include "mtu_config.h"
 
 #define LOG() printf("[%s:%d]\n", __FUNCTION__, __LINE__)
 
@@ -111,12 +101,13 @@ struct node {
     uint8_t __filler0[1];
     struct sockaddr_in6 ipv6;
     struct sockaddr ipv4;
-    uint8_t value[1420];
+    uint8_t value[VALUE_BUFFER_SIZE];
 };
 
-struct node_buffer{
-	uint8_t node_buffer_status;
-	struct node node;
+struct node_buffer {
+    uint8_t node_buffer_status;
+    uint8_t __padding[7];
+    struct node node;
 };
 
 struct node_recv_manager{
@@ -144,7 +135,7 @@ struct tcp_node {
     struct tcp_node *parent;
     struct node_recv_manager recv_manager;
     union protocol_base_cb *linked;
-    struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
+    struct iovec iovs[VALUE_OUTPUT_SIZE]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
     void (*on_accept_cb)(struct tcp_node*);
     void (*on_connect_cb)(struct tcp_node*);
     void (*on_receive_cb)(struct node_recv_manager*);
@@ -163,7 +154,7 @@ struct udp_node {
     struct node node_cfg;
     pthread_t accept_thread;
     struct node_recv_manager recv_manager;
-    struct iovec iovs[0x06]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
+    struct iovec iovs[VALUE_OUTPUT_SIZE]; // TODO seis mede a relação MTU ethernet/Jumbo Frame
     union protocol_base_cb *linked;
     void (*on_accept_cb)(struct udp_node*);
     void (*on_connect_cb)(struct udp_node*);

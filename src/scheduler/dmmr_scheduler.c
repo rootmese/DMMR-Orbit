@@ -121,7 +121,7 @@ static void sched_snd(struct scheduler_connection* conn, struct node *n, unsigne
     if (!pool || !u)
         return;
     pthread_mutex_lock(&(pool->mutex));
-    siz = ((pool->pool_size < 0x06) ? (pool->pool_size) : (0x06));
+    siz = ((pool->pool_size < VALUE_OUTPUT_SIZE) ? (pool->pool_size) : (VALUE_OUTPUT_SIZE));
     this->sock->dispatcher(u, n, siz);
     __bcpy(n + siz, n, (pool->pool_size - siz) * sizeof(struct node));
     pool->pool_count -= siz;

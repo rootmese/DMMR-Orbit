@@ -58,14 +58,14 @@ static inline void process_session_node(struct session_connection_pool *conn) {
     if (!(node_cmp(&(conn->cursor->n), get_session_node(&(conn->session))))) {
         *(conn->pool + conn->pool_count) = conn->cursor->n;
         conn->pool_count++;
-        uint16_t size = get_session_size(conn, 8520); // TODO valor baseado em 1500 de MTU
-        if (size >= 8520 && conn->pool_size > 0) { // TODO valor baseado em 1500 de MTU
+        uint16_t size = get_session_size(conn, VALUE_OUTPUT_BUFFER_SIZE); // TODO valor baseado em 1500 de MTU
+        if (size >= VALUE_OUTPUT_BUFFER_SIZE && conn->pool_size > 0) { // TODO valor baseado em 1500 de MTU
             unsigned count = 0, siz = 0;
             struct node *n = conn->pool, *n0 = n + conn->pool_count;
             do {
                 siz += n->value_size;
                 ++count;
-            } while (siz <= 8520 && ++n < n0);
+            } while (siz <= VALUE_OUTPUT_BUFFER_SIZE && ++n < n0);
             if (snd_cb){
                 union protocol_base_cb *u = get_session_pointer(&(conn->session));
                 snd_cb(u, conn->pool, count);
