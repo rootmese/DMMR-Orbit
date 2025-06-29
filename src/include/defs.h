@@ -72,6 +72,11 @@ typedef enum{
     proto_tcp_t    = 0x02
 }proto_t;
 
+typedef enum{
+    proto_arr_udp_t    = 0x00,
+    proto_arr_tcp_t    = 0x01
+}proto_arr_t;
+
 typedef enum {
     EZP_DNS     = 0,
     EZP_IPV4    = AF_INET,
@@ -98,16 +103,14 @@ typedef enum {
 struct node {
     uint64_t arrival;
     uint64_t deadline;
-    struct sockaddr_in6 ipv6;
-    struct sockaddr    ipv4;
-    int fd;
-    uint32_t __filler0;
-    ezp_addr_type family;
-    uint16_t port;
-    uint16_t __filler1;
     uint32_t value_size;
+    ezp_addr_type family;
+    int fd;
+    uint16_t port;
     uint8_t flags;
-    uint8_t __filler2[3];
+    uint8_t __filler0[1];
+    struct sockaddr_in6 ipv6;
+    struct sockaddr ipv4;
     uint8_t value[1420];
 };
 
@@ -224,6 +227,7 @@ static inline const char* rb_log_level_name(rb_log_level __l) {
 struct session_connection_pool {
     uint8_t run;
     uint16_t port;
+    uint16_t linked_port;
     uint32_t pool_size;
     uint32_t pool_count;
     struct node *pool;
@@ -241,6 +245,40 @@ struct scheduler_connection {
     struct session_connection_pool *session_ptr; // <-- ponteiro direto para a session_connection real
 };
 
+#ifndef __LINKED_SESSION_PORT_H__
+#define __LINKED_SESSION_PORT_H__
+
+static inline void link_session_ports(struct session_connection_pool *p, union protocol_base_cb *cb) {
+    if (!p || !cb)
+        return;
+
+    p->port = 0;
+    p->linked_port = 0;
+
+    switch (cb->none.proto) {
+        case proto_tcp_t:
+            if (cb->tcp.node)
+                p->port = cb->tcp.node->port;
+            if (cb->tcp.linked && cb->tcp.linked->tcp.node)
+                p->linked_port = cb->tcp.linked->tcp.node->port;
+            break;
+
+        case proto_udp_t:
+            if (cb->udp.node)
+                p->port = cb->udp.node->port;
+            if (cb->udp.linked && cb->udp.linked->udp.node)
+                p->linked_port = cb->udp.linked->udp.node->port;
+            break;
+
+        default:
+            break;
+    }
+}
+
+#endif
+
+//
+
 #ifndef __GET_SESSION_POINTER__
 #define __GET_SESSION_POINTER__
 
@@ -257,6 +295,30 @@ static inline union protocol_base_cb *get_session_pointer(union protocol_base_cb
                 break; /* Stupid break */
             default:
                 return 0;
+                break; /* Stupid break */
+        }
+    }
+}
+
+#endif
+
+#ifndef __GET_SESSION_CFG__
+#define __GET_SESSION_CFG__
+
+static inline  void get_session_cfg(union protocol_base_cb *__u, uint16_t *__p0, proto_arr_t *__p1){
+    if(__u){
+        switch(__u->none.proto){
+            case proto_none_t:
+                break;
+            case proto_tcp_t:
+                *__p0 = __u->tcp.node->port;
+                *__p1 = proto_arr_tcp_t;
+                break;
+            case proto_udp_t:
+                *__p0 = __u->udp.node->port;
+                *__p1 = proto_arr_udp_t;
+                break;
+            default:
                 break; /* Stupid break */
         }
     }

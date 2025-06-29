@@ -30,7 +30,7 @@ ifeq ($(BUILD),release)
     CFLAGS += -O2 -fPIC -DPIC
     BUILD_TYPE := Release
 else
-    CFLAGS += -O0 -ggdb
+    CFLAGS += -O0 -ggdb -mcmodel=large
     BUILD_TYPE := Debug
 endif
 

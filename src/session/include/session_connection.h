@@ -16,12 +16,11 @@ int insert_session(struct session_connection_pool*);
 
 void delete_session(struct session_connection_pool*, int);
 
-void session_connection_trigger_send(void *ptr);
+void session_connection_trigger_send(void*);
 
-struct session_connection_pool *get_recno_slot(void);
+struct session_connection_pool *get_recno_slot(uint16_t, proto_arr_t);
 
-struct session_connection_pool *get_recno_slot(void);
 
-void set_snd_cb(void (*send_cb)(union protocol_base_cb *session, struct node*, unsigned size));
+void set_snd_cb(void (*send_cb)(union protocol_base_cb *, struct node*, unsigned size));
 
 #endif

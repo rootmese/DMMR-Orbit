@@ -12,42 +12,15 @@
 #include <session_connection.h>
 
 struct session_connection_pool_recno{
-    uint16_t port;
-    struct session_connection_pool *pool;
-};
-
-static pthread_mutex_t session_connection_pool_mutex;
+    struct session_connection_pool pool[0x02];
+} recno[0xFFFF];
 
 static struct dmmr_circle_buffer *circle_buffer = 0;
 
-static unsigned session_connection_pool_recno_count = 0;
-
-static unsigned session_connection_pool_recno_size = 0;
-
-static struct session_connection_pool_recno *recno = 0;
-
 static void (*snd_cb)(union protocol_base_cb *session, struct node*, unsigned size) = 0;
 
-struct session_connection_pool *get_recno_slot(void) {
-    register struct session_connection_pool_recno *p = recno;
-    register struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_count;
-    pthread_mutex_lock(&session_connection_pool_mutex);
-    for (; p < p1; ++p)
-        if(!(p->pool && p->pool->run)){
-            pthread_mutex_unlock(&session_connection_pool_mutex);
-            return p->pool;
-        }
-    if (session_connection_pool_recno_count >= session_connection_pool_recno_size) {
-        session_connection_pool_recno_size *= 2;
-        recno = (struct session_connection_pool_recno*)realloc(recno, session_connection_pool_recno_size * sizeof(struct session_connection_pool_recno));
-        if (!recno){
-            pthread_mutex_unlock(&session_connection_pool_mutex);
-            return 0;
-        }
-    }
-    struct session_connection_pool *ret = (recno + session_connection_pool_recno_count++)->pool;
-    pthread_mutex_unlock(&session_connection_pool_mutex);
-    return ret;
+struct session_connection_pool *get_recno_slot(uint16_t port, proto_arr_t proto) {
+    return &(recno[port].pool[proto]);  
 }
 
 static inline void sort_pool_by_arrival_inline(struct node *v, size_t c) {
@@ -166,24 +139,26 @@ void delete_session(struct session_connection_pool *p, int do_sleep) {
             sleep(1);
             pthread_mutex_unlock(&(p->mutex));
         }
-        pthread_mutex_lock(&session_connection_pool_mutex);
-        p->run = 0;
         if (p->pool)
             free(p->pool);
         pthread_mutex_destroy(&(p->mutex));
         __mset(p, 0, sizeof(struct session_connection_pool));
-        pthread_mutex_unlock(&session_connection_pool_mutex);
     }
 }
 
 
 struct session_connection_pool *get_session(union protocol_base_cb *u){
-    if(u && session_connection_pool_recno_count){
-        struct session_connection_pool_recno *p = recno, *p0 = p + session_connection_pool_recno_count;
-        do{
-            if(&(p->pool->session) == u)
-                return p->pool;
-        }while(++p < p0);
+
+    if(u){
+        uint16_t port;
+        proto_arr_t arr;
+        get_session_cfg(u, &port, &arr);
+        if(
+            (port < 0x10000)
+            &&
+            ((arr == proto_arr_tcp_t) || (arr == proto_arr_udp_t))
+        )
+            return &(recno[port].pool[arr]);
     }
     return 0;
 }
@@ -193,33 +168,19 @@ int reload_session_conection(void){
 }
 
 int start_session_connection(struct dmmr_circle_buffer *__cb){
-    if(recno)
-        return EOF;
-    else{
-        recno = (struct session_connection_pool_recno*)calloc(0x400, sizeof(struct session_connection_pool_recno));
-        if(!recno)
-            return EOF;
-        session_connection_pool_recno_size = 0x400;
-        circle_buffer = __cb;
-        pthread_mutex_init(&session_connection_pool_mutex, 0);
-        return 0;
-    }
+    __mset(&recno, 0, sizeof(recno));
+    circle_buffer = __cb;
+     return 0;
 }
 
 void stop_session_connection(void){
-    if(recno){
-        pthread_mutex_lock(&session_connection_pool_mutex);
-        struct session_connection_pool_recno *p = recno;
-        struct session_connection_pool_recno *p1 = p + session_connection_pool_recno_count;
-        for (; p < p1; ++p)
-            if(!(p->pool && p->pool->run))
-                delete_session(p->pool, 0);
-        sleep(1);
-        free(recno);
-        recno = 0;
-        session_connection_pool_recno_size = 0;
-        session_connection_pool_recno_count = 0;
-        pthread_mutex_unlock(&session_connection_pool_mutex);
-        pthread_mutex_destroy(&session_connection_pool_mutex);
+    struct session_connection_pool_recno *p = recno;
+    struct session_connection_pool_recno *p1 = p + 0x10000;
+    for (; p < p1; ++p){
+        if (p->pool[0].port)
+            delete_session(&p->pool[0], 0);
+        if (p->pool[1].port)
+            delete_session(&p->pool[1], 0);
     }
+    sleep(1);
 }

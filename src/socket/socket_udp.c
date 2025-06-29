@@ -20,9 +20,12 @@ static unsigned udp_pool_count = 0;
 static void(*dispatcher_udp_cb)(union protocol_base_cb*) = 0;
 
 static void* receiver_thread(void* arg) {
+    int ret;
     struct udp_node *node = (struct udp_node*)arg;
     (void)init_node_recv_manager(&(node->recv_manager));
+
     struct timespec ts_monotonic, ts_realtime;
+
     union {
         struct sockaddr_in ipv4;
         struct sockaddr_in6 ipv6;
@@ -30,10 +33,14 @@ static void* receiver_thread(void* arg) {
 
     do {
         uint8_t pos;
-        struct node *n =  get_free_node(&(node->recv_manager), &pos);
+        struct node *n = get_free_node(&(node->recv_manager), &pos);
+        if (!n)
+            continue;
+
         struct iovec iov[1] = {
             { .iov_base = n->value, .iov_len = sizeof(n->value) }
         };
+
         socklen_t addr_len = (node->node_cfg.family == AF_INET6)
                              ? sizeof(client_addr_storage.ipv6)
                              : sizeof(client_addr_storage.ipv4);
@@ -48,37 +55,45 @@ static void* receiver_thread(void* arg) {
             .msg_flags = 0
         };
 
-        n->value_size = recvmsg(node->node_cfg.fd, &msg, 0);
-        if (n->value_size <= 0) {
-            if (node->run && n->value_size == 0)
+        ret = recvmsg(node->node_cfg.fd, &msg, 0);
+        if (ret <= 0) {
+            if (node->run && ret == 0)
                 continue;
             else
                 break;
         }
 
+        n->value_size = ret;
         n->fd = node->node_cfg.fd;
+        n->family = node->node_cfg.family;
 
-        if (node->node_cfg.family == AF_INET) {
+        if (n->family == AF_INET) {
             n->port = ntohs(client_addr_storage.ipv4.sin_port);
             __vcpy(&(n->ipv4), &(client_addr_storage.ipv4.sin_addr), sizeof(struct in_addr));
-        } else {
+        }
+        else {
             n->port = ntohs(client_addr_storage.ipv6.sin6_port);
             __vcpy(&(n->ipv6), &(client_addr_storage.ipv6.sin6_addr), sizeof(struct in6_addr));
         }
 
-        clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
-        n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
-        clock_gettime(CLOCK_REALTIME, &ts_realtime);
-        n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
+        ret = clock_gettime(CLOCK_MONOTONIC, &ts_monotonic);
+        if (!ret)
+            n->arrival = (uint64_t)ts_monotonic.tv_sec * 1000000000ULL + ts_monotonic.tv_nsec;
+
+        ret = clock_gettime(CLOCK_REALTIME, &ts_realtime);
+        if (!ret)
+            n->deadline = (uint64_t)ts_realtime.tv_sec * 1000000000ULL + ts_realtime.tv_nsec;
 
         if (node->on_receive_cb)
             node->on_receive_cb(&(node->recv_manager));
+    }while (node->run);
 
-    } while (node->run);
-    if(node->on_close_cb)
+    if (node->on_close_cb)
         node->on_close_cb(node);
+
     return 0;
 }
+
 
 int udp_send_to_client(struct udp_node *udp, struct node *n, size_t n_len) {
     if (!udp || !n || !n_len)

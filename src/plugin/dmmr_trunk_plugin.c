@@ -1,65 +1,73 @@
 #include <stdio.h>
 #include <dmmr_plugin.h>
-
 #include <__vcpy.h>
 
 static struct dmmr_session_connection_manager *sm = 0;
 static struct cfg_server_server *cfg = 0;
 static struct dmmr_plugin *this = 0;
-static uint64_t node_id = 0;
 
-static void on_close_connection_udp_cb(struct udp_node *input){
+// -- Callbacks de encerramento --
+
+static void on_close_connection_udp_cb(struct udp_node *input) {
     sm->sm_delete_session((union protocol_base_cb*)input);
 }
 
-static void on_close_connection_tcp_cb(struct tcp_node *input){
-    if(sm)
+static void on_close_connection_tcp_cb(struct tcp_node *input) {
+    if (sm)
         sm->sm_delete_session((union protocol_base_cb*)input);
 }
 
-// Not used for now
+// -- Callbacks de dispatch (não usados diretamente ainda) --
+
 static void on_dispatch_connection_udp_cb(struct udp_node *input) {
     int ret;
     if (input) {
-        struct session_connection_pool *p = get_recno_slot();
-        if (p) {
-            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));;
-            ret = sm->insert_session(p);
-            if (!ret) {
-                sm->insert_scheduler(p);
-            }
-        }
-    }
-}
-
-// Not used for now
-static void on_dispatch_connection_tcp_cb(struct tcp_node *input) {
-    int ret;
-    if (input) {
-        struct session_connection_pool *p = get_recno_slot();
-        if (p) {
-            __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
-            ret = sm->insert_session(p);
-            if (!ret) {
-                sm->insert_scheduler(p);
-            }
-        }
-    }
-}
-
-static void on_connect_connection_udp_cb(struct udp_node *input) {
-    int ret;
-    if (input) {
-        struct session_connection_pool *p = get_recno_slot();
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_udp_t);
         if (p) {
             __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
             input->linked = &(p->session);
             p->session.udp.linked = (union protocol_base_cb*)input;
             p->session.udp.proto = proto_udp_t;
+            link_session_ports(p, &p->session);
             ret = sm->insert_session(p);
-            if (!ret) {
+            if (!ret)
                 sm->insert_scheduler(p);
-            }
+        }
+    }
+}
+
+static void on_dispatch_connection_tcp_cb(struct tcp_node *input) {
+    int ret;
+    if (input) {
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_tcp_t);
+        if (p) {
+            __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
+            input->linked = &(p->session);
+            p->session.tcp.linked = (union protocol_base_cb*)input;
+            p->session.tcp.proto = proto_tcp_t;
+            link_session_ports(p, &p->session);
+            ret = sm->insert_session(p);
+            if (!ret)
+                sm->insert_scheduler(p);
+        }
+    }
+}
+
+// -- Callbacks de conexão ativa --
+
+static void on_connect_connection_udp_cb(struct udp_node *input) {
+    int ret;
+    if (input) {
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_udp_t);
+        if (p) {
+            __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
+            input->linked = &(p->session);
+            p->session.udp.linked = (union protocol_base_cb*)input;
+            p->session.udp.proto = proto_udp_t;
+            link_session_ports(p, &p->session);
+            ret = sm->insert_session(p);
+            if (!ret)
+                sm->insert_scheduler(p);
         }
     }
 }
@@ -67,28 +75,31 @@ static void on_connect_connection_udp_cb(struct udp_node *input) {
 static void on_connect_connection_tcp_cb(struct tcp_node *input) {
     int ret;
     if (input) {
-        struct session_connection_pool *p = get_recno_slot();
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_tcp_t);
         if (p) {
             __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
             input->linked = &(p->session);
             p->session.tcp.linked = (union protocol_base_cb*)input;
             p->session.tcp.proto = proto_tcp_t;
+            link_session_ports(p, &p->session);
             ret = sm->insert_session(p);
-            if (!ret) {
+            if (!ret)
                 sm->insert_scheduler(p);
-            }
         }
     }
 }
 
+// -- Callbacks de aceitação passiva --
+
 static void on_acception_connection_udp_cb(struct udp_node *input) {
     int ret;
     if (input) {
-        struct session_connection_pool *p = get_recno_slot();
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_udp_t);
         if (p) {
             __vcpy(&(p->session.udp), input, sizeof(struct udp_node));
             p->session.udp.linked = (union protocol_base_cb*)input;
             p->session.udp.proto = proto_udp_t;
+            link_session_ports(p, &p->session);
             ret = sm->insert_session(p);
             if (!ret) {
                 ret = sm->insert_scheduler(p);
@@ -111,11 +122,12 @@ static void on_acception_connection_udp_cb(struct udp_node *input) {
 static void on_acception_connection_tcp_cb(struct tcp_node *input) {
     int ret;
     if (input) {
-        struct session_connection_pool *p = get_recno_slot();
+        struct session_connection_pool *p = get_recno_slot(input->node->port, proto_arr_tcp_t);
         if (p) {
             __vcpy(&(p->session.tcp), input, sizeof(struct tcp_node));
             p->session.tcp.linked = (union protocol_base_cb*)input;
             p->session.tcp.proto = proto_tcp_t;
+            link_session_ports(p, &p->session);
             ret = sm->insert_session(p);
             if (!ret) {
                 ret = sm->insert_scheduler(p);
@@ -135,8 +147,9 @@ static void on_acception_connection_tcp_cb(struct tcp_node *input) {
     }
 }
 
-static void dmmr_plugin_reload(void){
-}
+// -- Plugin API --
+
+static void dmmr_plugin_reload(void) {}
 
 static void dmmr_plugin_load(void) {
     if (sm && cfg) {

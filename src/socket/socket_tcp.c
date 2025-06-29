@@ -19,7 +19,6 @@ static pthread_mutex_t node_mutex;
 
 static pthread_mutex_t tcp_node_mutex;
 
-//TODO Verificar um freelock, getnode é usado para iniciar uma conexão.
 static struct node *get_node(void){
     register struct node *p = node_pool;
     register struct node *p1 = node_pool + node_pool_size;
@@ -166,63 +165,65 @@ static void *accept_thread(void *arg) {
         if (ret <= 0)
             continue;
 
-        if (FD_ISSET(node->node_cfg.fd, &readfds)) {
-            int client_fd;
-            void *addr = (node->node_cfg.family == AF_INET)
-                         ? (void *)&client_addr
-                         : (void *)&client_addr_v6;
-            socklen_t *len = (node->node_cfg.family == AF_INET)
-                             ? &addr_len
-                             : &addr_len_v6;
+        if (!FD_ISSET(node->node_cfg.fd, &readfds))
+            continue;
 
-            client_fd = accept(node->node_cfg.fd, (struct sockaddr *)addr, len);
-            if (client_fd < 0) {
-                if (node->run)
-                    continue;
-                else
-                    break;
-            }
+        void *addr = (node->node_cfg.family == AF_INET)
+                     ? (void *)&client_addr
+                     : (void *)&client_addr_v6;
+        socklen_t *len = (node->node_cfg.family == AF_INET)
+                         ? &addr_len
+                         : &addr_len_v6;
 
-            struct node *n = get_node();
-            if (!n) {
-                close(client_fd);
+        int client_fd = accept(node->node_cfg.fd, (struct sockaddr *)addr, len);
+        if (client_fd < 0) {
+            if (node->run)
                 continue;
-            }
-
-            n->fd = client_fd;
-            n->family = node->node_cfg.family;
-
-            if (n->family == AF_INET) {
-                n->port = ntohs(client_addr.sin_port);
-                __vcpy(&n->ipv4, &client_addr.sin_addr, sizeof(struct in_addr));
-            } else {
-                struct sockaddr_in6 *a = &client_addr_v6;
-                n->port = ntohs(a->sin6_port);
-                __vcpy(&n->ipv6, &a->sin6_addr, sizeof(struct in6_addr));
-            }
-
-            struct tcp_node *tn = get_tcp_node();
-            if (tn) {
-                tn->parent = node;
-                tn->node = n;
-                tn->node_count++;
-                tn->run = !0;
-
-                (void)init_node_recv_manager(&tn->recv_manager);
-                tn->on_receive_cb = node->on_receive_cb;
-
-                spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
-                if (!ret && node->on_accept_cb)
-                    node->on_accept_cb(tn);
-            } else {
-                delete_node(n);
-                close(client_fd);
-            }
+            else
+                break;
         }
+
+        struct node *n = get_node();
+        if (!n) {
+            close(client_fd);
+            continue;
+        }
+
+        n->fd = client_fd;
+        n->family = node->node_cfg.family;
+
+        if (n->family == AF_INET) {
+            n->port = ntohs(client_addr.sin_port);
+            __vcpy(&n->ipv4, &client_addr.sin_addr, sizeof(struct in_addr));
+        } else {
+            struct sockaddr_in6 *a = &client_addr_v6;
+            n->port = ntohs(a->sin6_port);
+            __vcpy(&n->ipv6, &a->sin6_addr, sizeof(struct in6_addr));
+        }
+
+        struct tcp_node *tn = get_tcp_node();
+        if (!tn) {
+            delete_node(n);
+            close(client_fd);
+            continue;
+        }
+
+        tn->parent = node;
+        tn->node = n;
+        tn->node_count++;
+        tn->run = !0;
+
+        ret = init_node_recv_manager(&tn->recv_manager);
+        tn->on_receive_cb = node->on_receive_cb;
+
+        spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
+        if (!ret && node->on_accept_cb)
+            node->on_accept_cb(tn);
     }
 
     return 0;
 }
+
 
 
 int connect_tcp_server(struct tcp_node *node) {
@@ -240,61 +241,66 @@ int connect_tcp_server(struct tcp_node *node) {
     if (sock == EOF)
         goto return_error;
 
-    ret = connect(sock, (struct sockaddr *)&node->node_cfg.ipv4,
-                  (node->node_cfg.family == AF_INET)
-                      ? sizeof(struct sockaddr_in)
-                      : sizeof(struct sockaddr_in6));
+    ret = connect(
+        sock,
+        (struct sockaddr *)&node->node_cfg.ipv4,
+        (node->node_cfg.family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6)
+    );
+    if (!ret) {
+        struct node *n = get_node();
+        if (!n)
+            goto return_close_socket_error;
 
-    if (ret)
-        goto return_close_socket_error;
+        n->fd = sock;
+        n->family = node->node_cfg.family;
 
-    struct node *n = get_node();
-    if (!n)
-        goto return_close_socket_error;
-
-    n->fd = sock;
-    n->family = node->node_cfg.family;
-
-    if (n->family == AF_INET) {
-        struct sockaddr_in local_addr;
-        socklen_t len = sizeof(local_addr);
-        if (getsockname(sock, (struct sockaddr *)&local_addr, &len) == 0) {
-            n->port = ntohs(local_addr.sin_port);
-            __vcpy(&n->ipv4, &local_addr.sin_addr, sizeof(struct in_addr));
+        if (n->family == AF_INET) {
+            struct sockaddr_in local_addr;
+            socklen_t len = sizeof(local_addr);
+            ret = getsockname(sock, (struct sockaddr *)&local_addr, &len);
+            if (!ret) {
+                n->port = ntohs(local_addr.sin_port);
+                __vcpy(&n->ipv4, &local_addr.sin_addr, sizeof(struct in_addr));
+            }
         }
-    } else {
-        struct sockaddr_in6 local_addr6;
-        socklen_t len = sizeof(local_addr6);
-        if (getsockname(sock, (struct sockaddr *)&local_addr6, &len) == 0) {
-            n->port = ntohs(local_addr6.sin6_port);
-            __vcpy(&n->ipv6, &local_addr6.sin6_addr, sizeof(struct in6_addr));
+        else {
+            struct sockaddr_in6 local_addr6;
+            socklen_t len = sizeof(local_addr6);
+            ret = getsockname(sock, (struct sockaddr *)&local_addr6, &len);
+            if (!ret) {
+                n->port = ntohs(local_addr6.sin6_port);
+                __vcpy(&n->ipv6, &local_addr6.sin6_addr, sizeof(struct in6_addr));
+            }
         }
+
+        struct tcp_node *tn = get_tcp_node();
+        if (tn) {
+            tn->node = n;
+            tn->linked = node->linked;
+            tn->node_count++;
+            tn->run = !0;
+            (void)init_node_recv_manager(&tn->recv_manager);
+            tn->on_receive_cb = node->on_receive_cb;
+            spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
+            if (!ret && node->on_connect_cb)
+                node->on_connect_cb(tn);
+            return 0;
+        }
+
+        // Falha ao alocar tn
+        delete_node(n);
+        goto return_close_socket_error;
     }
 
-    struct tcp_node *tn = get_tcp_node();
-    if (!tn)
-        goto return_cleanup_node;
+    // Falha ao conectar
+    goto return_close_socket_error;
 
-    tn->node = n;
-    tn->linked = node->linked;
-    tn->node_count++;
-    tn->run = !0;
-    (void)init_node_recv_manager(&tn->recv_manager);
-    tn->on_receive_cb = node->on_receive_cb;
-
-    spawn_detached_thread(&tn->accept_thread, tcp_receiver_thread, tn, &ret);
-    if (!ret && node->on_connect_cb)
-        node->on_connect_cb(tn);
-
-    return 0;
-
-return_cleanup_node:
-    delete_node(n);
 return_close_socket_error:
     close(sock);
 return_error:
     return EOF;
 }
+
 
 
 int start_tcp_service(struct tcp_node *node) {
