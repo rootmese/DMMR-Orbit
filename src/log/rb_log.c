@@ -3,8 +3,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <__mset.h>
-#include <__vlen.h>
 #include <syslog.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -79,6 +77,23 @@ static void* rb_log_thread_func(void* arg) {
     return 0;
 }
 
+void rb_log_flush(void) {
+    while (log_buf.read_pos != log_buf.write_pos) {
+        struct iovec iov[16];
+        int batch_count = 0;
+        while (batch_count < 16 && log_buf.read_pos != log_buf.write_pos) {
+            iov[batch_count].iov_base = log_buf.queue[log_buf.read_pos];
+            iov[batch_count].iov_len  = __vlen(log_buf.queue[log_buf.read_pos]);
+            log_buf.read_pos = (log_buf.read_pos + 1) % RB_LOG_BUFFER_SIZE;
+            batch_count++;
+        }
+        if (syslog_fd >= 0 && batch_count > 0) {
+            writev(syslog_fd, iov, batch_count);
+        }
+    }
+}
+
+
 void rb_log_init(struct cfg_server_server *server_cfg) {
     cfg = server_cfg;
     __mset(&log_buf, 0, sizeof(log_buf));
@@ -100,9 +115,8 @@ void rb_log_shutdown(void) {
 }
 
 void rb_log_push(rb_log_level level, const char *msg, const char *func, int line) {
-    if (rb_log_enabled(cfg->log_level, level)) {
+    if (!cfg || rb_log_enabled(cfg->log_level, level)) {
         pthread_mutex_lock(&log_buf.lock);
-
         char *buf = log_buf.queue[log_buf.write_pos];
         char *p = buf;
         const char *end = buf + RB_LOG_LINE_SIZE - 1;

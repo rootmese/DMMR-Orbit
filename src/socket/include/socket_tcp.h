@@ -1,6 +1,7 @@
 #ifndef __SOCKET_H__
 #define __SOCKET_H__
-#include <defs.h>
+
+#include <funcs.h>
 
 struct tcp_node *get_tcp_node(void);
 

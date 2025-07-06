@@ -1,7 +1,7 @@
 #ifndef __SESSION_CONNECTION_H__
 #define __SESSION_CONNECTION_H__
 
-#include <defs.h>
+#include <funcs.h>
 #include <dmmr_circle_buffer.h>
 
 int start_session_connection(struct dmmr_circle_buffer*);

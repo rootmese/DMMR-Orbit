@@ -1,7 +1,7 @@
 #ifndef __DMMR_SCHEDULER_H__
 #define __DMMR_SCHEDULER_H__
 
-#include <defs.h>
+#include <funcs.h>
 #include <dmmr_socket.h>
 
 struct dmmr_scheduler {

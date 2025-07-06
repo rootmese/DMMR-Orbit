@@ -1,11 +1,4 @@
-#include <stdio.h>
 
-#include <defs.h>
-#include <parse_uri.h>
-#include <dns_utils.h>
-#include <dmmr_sleep.h>
-#include <__mset.h>
-#include <__vcpy.h>
 
 #include <dmmr_socket.h>
 #include <socket_tcp.h>

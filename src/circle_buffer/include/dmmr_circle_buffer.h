@@ -1,7 +1,7 @@
 #ifndef __CIRCLE_BUFFER_H__
 #define __CIRCLE_BUFFER_H__
 
-#include <defs.h>
+#include <funcs.h>
 
 TAILQ_HEAD(tailq_fifo, node_fifo_buffer);
 CIRCLEQ_HEAD(circleq_head, node_circle_buffer);

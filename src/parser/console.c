@@ -1,9 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
 #include <console.h>
 #include <l_tokens.h>
-#include <unquote_string.h>
 
 // Define o enum internamente (não precisa estar no header)
 typedef enum {

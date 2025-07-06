@@ -1,10 +1,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include <__mset.h>
-#include <parse_uri.h>
-
 #include <dmmr_session_connection_manager.h>
+#include <rb_log.h>
+#include <rb_trycatch.h>
 
 static struct cfg_server_server *cfg = 0;
 static struct dmmr_circle_buffer* _circle_buffer = 0;
@@ -87,40 +86,61 @@ struct dmmr_session_connection_manager* new_session_connection_manager(
     struct dmmr_socket* sock,
     struct cfg_server_server* css)
 {
-    if (!cb || !sched || !sock)
+    try_catch_t ctx;
+    RB_TRY(ctx) {
+        // Validação dos parâmetros
+        if (!cb || !sched || !sock)
+            RB_THROW(ctx, RB_EXC_NULL_CONFIG);
+
+        // Alocação do gerenciador
+        struct dmmr_session_connection_manager* mgr = 
+            (struct dmmr_session_connection_manager*)calloc(1, sizeof(struct dmmr_session_connection_manager));
+        if (!mgr)
+            RB_THROW(ctx, RB_EXC_ALLOC_FAIL);
+
+        // Configuração básica
+        cfg = css;
+        _circle_buffer = cb;
+        _sched = sched;
+        _sock = sock;
+        _this = mgr;
+
+        // Inicialização das funções
+        mgr->trunk = trunk;
+        mgr->connect = socket_connect;
+        mgr->close = socket_close;
+        mgr->sm_delete_session = sm_delete_session;
+        mgr->socket_start_accept_from_uri = socket_start_accept_from_uri;
+        mgr->socket_create_dispatcher_from_uri = socket_create_dispatcher_from_uri;
+        mgr->insert_session = session_insert_session;
+        mgr->delete_session = session_delete_session;
+        mgr->get_session = session_get_session;
+        mgr->insert_scheduler = sched_insert;
+        mgr->delete_scheduler = sched_delete;
+
+        // Inicia a conexão de sessão
+        int ret = start_session_connection(_circle_buffer);
+        if (ret) {
+            rb_log_push(LOG_ERR, "Falha ao iniciar sessões", __func__, __LINE__);
+            RB_THROW(ctx, RB_EXC_SERVER_INIT);
+        }
+
+        // Configura callback de envio
+        set_snd_cb(_sock->dispatcher);
+
+        rb_log_push(LOG_INFO, "Gerenciador de sessões criado", __func__, __LINE__);
+        return mgr;
+    }
+    RB_CATCH(ctx) {
+        // Rollback em caso de falha
+        if (_this) {
+            stop_session_connection();
+            free(_this);
+            _this = 0;
+        }
+        rb_log_push(LOG_ERR, rb_exc_message(ctx.exception_code), __func__, __LINE__);
         return 0;
-    int ret;
-    struct dmmr_session_connection_manager* mgr = (struct dmmr_session_connection_manager*)calloc(1, sizeof(struct dmmr_session_connection_manager));
-    if (!mgr)
-        return 0;
-
-    cfg = css;
-
-    mgr->reload                                = 0;
-    mgr->trunk                                 = trunk;
-    mgr->connect                               = socket_connect;
-    mgr->close                                 = socket_close;
-    mgr->sm_delete_session                     = sm_delete_session;
-    mgr->socket_start_accept_from_uri          = socket_start_accept_from_uri;
-    mgr->socket_create_dispatcher_from_uri     = socket_create_dispatcher_from_uri;
-    mgr->insert_session                        = session_insert_session;
-    mgr->delete_session                        = session_delete_session;
-    mgr->get_session                           = session_get_session;
-    mgr->insert_scheduler                      = sched_insert;
-    mgr->delete_scheduler                      = sched_delete;
-
-    _circle_buffer = cb;
-    _sched = sched;
-    _sock = sock;
-    _this = mgr;
-
-    ret = start_session_connection(_circle_buffer);
-    if(ret)
-        return 0;
-
-    set_snd_cb(_sock->dispatcher);
-
-    return mgr;
+    }
 }
 
 void delete_session_connection_manager(void){

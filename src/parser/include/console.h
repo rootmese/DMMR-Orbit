@@ -1,7 +1,7 @@
 #ifndef __CONSOLE_H__
 #define __CONSOLE_H__
 
-#include <defs.h>
+#include <funcs.h>
 
 struct cfg_server_server;
 

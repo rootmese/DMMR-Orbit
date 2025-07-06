@@ -1,9 +1,4 @@
 
-#include <stdio.h>
-
-#include <defs.h>
-#include <__mset.h>
-#include <__vcpy.h>
 #include <node_recv_manager.h>
 
 #include <socket_udp.h>

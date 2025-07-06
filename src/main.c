@@ -8,7 +8,6 @@
 
 #include <dmmr_daemon.h>
 #include <rb_log.h>
-#include <__mset.h>
 
 static struct cfg_daemon_server cfg;
 
@@ -69,6 +68,7 @@ int run_foreground(void){
     server->stop();
     free_dmmr_server(server);
     fprintf(stderr, "[INFO] Encerrado.\n");
+    rb_log_flush();
     return 0;
 }
 
@@ -88,7 +88,10 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Falha ao iniciar o daemon\n");
             exit(EXIT_FAILURE);
         }
-        else
-            return daemon->run();
+        else{
+            int ret = daemon->run();
+            rb_log_flush();
+            return ret;
+        }
     }
 }

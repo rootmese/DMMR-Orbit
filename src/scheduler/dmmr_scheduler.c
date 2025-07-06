@@ -1,12 +1,8 @@
-#include <stdio.h>
-
-#include <dmmr_sleep.h>
-#include <__bcpy.h>
-#include <__vcpy.h>
-#include <__mset.h>
 
 #include <dmmr_scheduler.h>
 #include <dmmr_parser.h>
+#include <rb_log.h>
+#include <rb_trycatch.h>
 
 static size_t scheduler_connection_size = 0;
 static size_t scheduler_connection_count = 0;
@@ -196,10 +192,16 @@ static void sched_delete(struct session_connection_pool *pool){
     pthread_mutex_unlock(&slots_mutex);
 }
 
-struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *__sock, struct cfg_server_server *__cfg_server){
-    struct dmmr_scheduler *p = (struct dmmr_scheduler*)calloc(1, sizeof(struct dmmr_scheduler));
-    if(p)
-    {
+struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *__sock, struct cfg_server_server *__cfg_server) {
+    try_catch_t ctx;
+    RB_TRY(ctx) {
+        if (!__sock || !__cfg_server)
+            RB_THROW(ctx, RB_EXC_NULL_CONFIG);
+
+        struct dmmr_scheduler *p = (struct dmmr_scheduler*)calloc(1, sizeof(struct dmmr_scheduler));
+        if (!p)
+            RB_THROW(ctx, RB_EXC_ALLOC_FAIL);
+
         cfg = __cfg_server;
         p->sock = __sock;
         p->reload = sched_reload;
@@ -210,8 +212,12 @@ struct dmmr_scheduler* new_dmmr_scheduler(struct dmmr_socket *__sock, struct cfg
         p->send = sched_snd;
         p->trigger_send = sched_trigger_snd;
         this = p;
+
+        rb_log_push(LOG_INFO, "Scheduler criado", __func__, __LINE__);
         return p;
     }
-    else
+    RB_CATCH(ctx) {
+        rb_log_push(LOG_ERR, rb_exc_message(ctx.exception_code), __func__, __LINE__);
         return 0;
+    }
 }

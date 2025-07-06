@@ -1,7 +1,7 @@
 #ifndef __DMMR_SESSION_CONNECTION_MANAGER_H__
 #define __DMMR_SESSION_CONNECTION_MANAGER_H__
 
-#include <defs.h>
+#include <funcs.h>
 #include <dmmr_circle_buffer.h>
 #include <dmmr_scheduler.h>
 #include <dmmr_socket.h>

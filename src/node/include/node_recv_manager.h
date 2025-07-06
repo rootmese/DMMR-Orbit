@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 
-#include <defs.h>
+#include <funcs.h>
 
 int init_node_recv_manager(struct node_recv_manager*);
 

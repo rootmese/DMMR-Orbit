@@ -1,7 +1,7 @@
 #ifndef __DMMR_SOCKET_H__
 #define __DMMR_SOCKET_H__
 
-#include <defs.h>
+#include <funcs.h>
 #include <dmmr_circle_buffer.h>
 
 struct dmmr_socket{

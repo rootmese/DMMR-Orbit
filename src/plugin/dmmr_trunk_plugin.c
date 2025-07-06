@@ -1,6 +1,5 @@
-#include <stdio.h>
+
 #include <dmmr_plugin.h>
-#include <__vcpy.h>
 
 static struct dmmr_session_connection_manager *sm = 0;
 static struct cfg_server_server *cfg = 0;

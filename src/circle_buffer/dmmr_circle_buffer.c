@@ -1,10 +1,10 @@
 #include <stdio.h>
 
-#include <__vcpy.h>
-
-#include <dmmr_sleep.h>
-
 #include <dmmr_circle_buffer.h>
+
+#include <rb_log.h>
+
+#include <rb_trycatch.h>
 
 static struct dmmr_circle_buffer *this = 0;
 
@@ -163,16 +163,29 @@ void stop(void){
 }
 
 struct dmmr_circle_buffer* new_circle_buffer(struct cfg_server_server *__cfg) {
-    struct dmmr_circle_buffer* cb = (struct dmmr_circle_buffer*)calloc(1, sizeof(struct dmmr_circle_buffer));
-    if (!cb || !__cfg)
+    try_catch_t ctx;
+    RB_TRY(ctx) {
+        if (!__cfg)
+            RB_THROW(ctx, RB_EXC_NULL_CONFIG);
+
+        struct dmmr_circle_buffer* cb = (struct dmmr_circle_buffer*)calloc(1, sizeof(struct dmmr_circle_buffer));
+        if (!cb)
+            RB_THROW(ctx, RB_EXC_ALLOC_FAIL);
+
+        cfg = __cfg;
+        cb->is_behind_cursor = is_behind_cursor;
+        cb->get_current_node = get_current_node;
+        cb->iterate = iterate;
+        cb->start = start;
+        cb->stop = stop;
+        this = cb;
+
+        rb_log_push(LOG_INFO, "Circle buffer criado", __func__, __LINE__);
+        return cb;
+    }
+    RB_CATCH(ctx) {
+        rb_log_push(LOG_ERR, rb_exc_message(ctx.exception_code), __func__, __LINE__);
         return 0;
-    cfg = __cfg;
-    cb->is_behind_cursor = is_behind_cursor;
-    cb->get_current_node = get_current_node;
-    cb->iterate = iterate;
-    cb->start = start;
-    cb->stop = stop;
-    this = cb;
-    return cb;
+    }
 }
 

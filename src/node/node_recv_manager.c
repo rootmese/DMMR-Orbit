@@ -1,8 +1,5 @@
 #include <stdio.h>
 
-#include <__vcpy.h>
-#include <__mset.h>
-
 #include <node_recv_manager.h>
 
 struct node *recicle_node(struct node_recv_manager *input, uint8_t pos){

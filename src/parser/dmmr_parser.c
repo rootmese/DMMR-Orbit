@@ -1,10 +1,8 @@
 #include <dmmr_parser.h>
 #include <console.h>
-#include <crc.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+
+#include <rb_log.h>
+#include <rb_trycatch.h>
 
 static uint8_t run = 0;
 static unsigned long last_crc = 0;
@@ -48,19 +46,33 @@ struct dmmr_parser* new_dmmr_parser(
     struct cfg_daemon_server *__cfg_daemon,
     struct cfg_server_server *__cfg_server
 ) {
-    struct dmmr_parser* p = calloc(1, sizeof(struct dmmr_parser));
-    if (p && __cfg_daemon && __cfg_server) {
+    try_catch_t ctx;
+    RB_TRY(ctx) {
+        // Validação dos parâmetros
+        if (!__cfg_daemon || !__cfg_server)
+            RB_THROW(ctx, RB_EXC_NULL_CONFIG);
+
+        // Alocação do parser
+        struct dmmr_parser* p = calloc(1, sizeof(struct dmmr_parser));
+        if (!p)
+            RB_THROW(ctx, RB_EXC_ALLOC_FAIL);
+
+        // Configuração básica
         cfg_daemon = __cfg_daemon;
         cfg_server = __cfg_server;
-        
+        this = p;
+        run = !0;
+
+        // Atribuição das funções
         p->load = parser_load_config;
         p->run = parser_reload_config;
         p->stop = parser_stop_config;
-        
-        run = !0;
-        this = p;
-        
+
+        rb_log_push(LOG_INFO, "Parser configurado", __func__, __LINE__);
         return p;
     }
-    return 0;
+    RB_CATCH(ctx) {
+        rb_log_push(LOG_ERR, rb_exc_message(ctx.exception_code), __func__, __LINE__);
+        return 0;
+    }
 }

@@ -1,7 +1,7 @@
 #ifndef __DMMR_SERVER_H__
 #define __DMMR_SERVER_H__
 
-#include <defs.h>
+#include <funcs.h>
 #include <dmmr_session_connection_manager.h>
 
 struct dmmr_server {

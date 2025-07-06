@@ -1,7 +1,7 @@
 #ifndef __DMMR_PARSER_H__
 #define __DMMR_PARSER_H__
 
-#include <defs.h>
+#include <funcs.h>
 
 struct dmmr_parser {
     int (*load)(void);

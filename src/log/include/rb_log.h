@@ -1,10 +1,10 @@
 #ifndef __RB_LOG_H__
-#define __RB_LOG_H
+#define __RB_LOG_H__
 
 #include <pthread.h>
 #include <stdint.h>
 
-#include <defs.h>
+#include <funcs.h>
 
 #define RB_LOG_LINE_SIZE   512
 #define RB_LOG_BUFFER_SIZE 256
@@ -20,5 +20,6 @@ struct rb_log_buffer {
 void rb_log_init(struct cfg_server_server*);
 void rb_log_shutdown(void);
 void rb_log_push(rb_log_level, const char*, const char*, int);
+void rb_log_flush(void);
 
 #endif
