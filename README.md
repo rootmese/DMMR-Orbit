@@ -1,16 +1,17 @@
 # DMMR Orbit
 
-DMMR Orbit é um servidor/daemon em C para gerenciamento de sessões e roteamento de tráfego de rede com plugin de tronco, escalonamento e suporte a operações em foreground ou daemon.
+DMMR Orbit é um servidor/daemon de rede em C para gerenciamento de sessões e roteamento de tráfego, com plugin de tronco, escalonamento e suporte a operações em foreground ou daemon. O projeto também atua como emulador de tempo real, usando callbacks de I/O para simular comportamento de runtime em tempo real.
 
 ## Visão geral
 
 O projeto implementa um servidor chamado `dmmr_orbit` que:
 - lê uma configuração de arquivo
-- inicia um servidor DMMR customizado
+- inicia um servidor DMMR customizado de rede
 - suporta execução em foreground
 - suporta execução como daemon
 - usa um parser Flex para configuração
 - mantém logs via componente de ring buffer
+- emula comportamento de tempo real usando callbacks de I/O e agendamento de sessões
 
 ## Estrutura do repositório
 
@@ -87,6 +88,38 @@ O arquivo padrão de exemplo está em `etc/dmmr_orbit.conf`. Ele inclui parâmet
 - `RB_LOG_LEVEL`
 
 O arquivo de configuração define os valores usados pelo servidor, pelo parser e pelo scheduler.
+
+## Plugins e emulação em tempo real
+
+O DMMR Orbit usa uma interface de plugin simples baseada em callbacks, projetada para comportamento de emulação de tempo real.
+
+A interface principal está em `src/plugin/include/dmmr_plugin.h` e define:
+
+- `struct dmmr_plugin` com:
+  - `void (*load)(void);`
+  - `void (*reload)(void);`
+- `struct dmmr_plugin *new_dmmr_plugin(struct dmmr_session_connection_manager*, struct cfg_server_server*);`
+
+No servidor, o plugin é instanciado e carregado em `src/server/dmmr_server.c`:
+
+```c
+plugin = new_dmmr_plugin(session_manager, &cfg);
+plugin->load();
+```
+
+A implementação atual em `src/plugin/dmmr_trunk_plugin.c` faz a integração com o gerenciador de sessões e registra callbacks de rede para aceitação, conexão, despacho e fechamento de sessões.
+
+Como se trata de um emulador de tempo real, as operações do plugin não são chamadas de forma síncrona tradicional: o plugin usa callbacks para reagir a eventos de I/O e manter a lógica de sessão dentro do loop de runtime.
+
+Isso significa:
+
+- o servidor cria e inicializa o plugin;
+- o plugin registra handlers de eventos de rede;
+- o plugin administra sessões em tempo real por callbacks de `accept`, `connect`, `dispatch` e `close`.
+
+Essa arquitetura garante que o DMMR Orbit possa comportar-se como um emulador de tempo real, reagindo a eventos de rede conforme eles ocorrem.
+
+O scheduler interno também suporta pré-empção por deadline, com um limite configurável (`SCHEDULER_PREEMPTIVE_DEADLINE`). A lógica de envio é delegada a um thread de scheduler que dispara o despacho quando o prazo de tempo real está prestes a expirar.
 
 ## Observações
 
