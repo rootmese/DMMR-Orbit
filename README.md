@@ -1,145 +1,214 @@
 # DMMR Orbit
 
-DMMR Orbit é um servidor/daemon de rede em C para gerenciamento de sessões e roteamento de tráfego, com plugin de tronco, escalonamento e suporte a operações em foreground ou daemon. O projeto também atua como emulador de tempo real, usando callbacks de I/O para simular comportamento de runtime em tempo real.
+DMMR Orbit is an experimental real-time network emulation framework written in C.
 
-## Visão geral
+The project was designed to study and validate session-oriented traffic orchestration, QoS strategies, real-time scheduling, and event-driven network processing in heterogeneous environments.
 
-O projeto implementa um servidor chamado `dmmr_orbit` que:
-- lê uma configuração de arquivo
-- inicia um servidor DMMR customizado de rede
-- suporta execução em foreground
-- suporta execução como daemon
-- usa um parser Flex para configuração
-- mantém logs via componente de ring buffer
-- emula comportamento de tempo real usando callbacks de I/O e agendamento de sessões
+Unlike traditional network daemons that simply react to incoming packets, DMMR Orbit combines session management, callback-based I/O processing, circular buffers, and preemptive deadline scheduling to emulate real-time behavior under controlled conditions.
 
-## Estrutura do repositório
+## Main Features
 
-- `src/` - código-fonte principal
-  - `main.c` - ponto de entrada do programa
-  - `daemon/` - controle de execução como daemon
-  - `server/` - lógica principal do servidor
-  - `parser/` - análise e recarga de configuração
-  - `socket/` - abstração de sockets TCP/UDP
-  - `session/` - gerência de conexões de sessão
-  - `scheduler/` - lógica de escalonamento de runtime
-  - `plugin/` - plugin de tronco e integração de sessão
-  - `circle_buffer/` - buffer circular de comunicação
-  - `log/` - registro e tratamento de logs
-  - `utils/` - utilitários auxiliares
-- `etc/` - arquivos de configuração
-- `makefile` - build system
+- Event-driven TCP/UDP network processing
+- Session-oriented architecture
+- Real-time emulation based on I/O callbacks
+- Preemptive deadline scheduler
+- Circular buffer communication layer
+- Plugin-based runtime integration
+- Configuration reload support
+- Foreground or daemon execution
+- Low-overhead memory management
+- Research platform for QoS and traffic orchestration experiments
 
-## Requisitos
+## Architecture
 
-- GCC com suporte a GNU11
-- `flex`
-- sistema POSIX (Linux/Unix)
-- biblioteca `librt`
+DMMR Orbit is organized around several core components:
+
+### Session Manager
+
+Responsible for allocating, tracking, and managing active communication sessions.
+
+### Scheduler
+
+Controls runtime execution and dispatch operations using configurable preemptive deadlines.
+
+### Plugin Layer
+
+Provides integration points for custom runtime behavior through callback registration.
+
+### Network Layer
+
+Handles TCP and UDP communication using an event-driven model.
+
+### Circular Buffer
+
+Provides efficient communication between internal processing components with minimal overhead.
+
+### Configuration Parser
+
+Loads and validates runtime configuration files using a Flex-based parser.
+
+## Repository Structure
+
+```text
+src/
+├── main.c
+├── daemon/
+├── server/
+├── parser/
+├── socket/
+├── session/
+├── scheduler/
+├── plugin/
+├── circle_buffer/
+├── log/
+└── utils/
+
+etc/
+└── dmmr_orbit.conf
+
+makefile
+```
+
+## Requirements
+
+- GCC with GNU11 support
+- Flex
+- POSIX-compatible operating system (Linux/Unix)
 
 ## Build
 
-No diretório raiz do projeto:
+Debug build:
 
 ```bash
 make debug
 ```
 
-Para build de release:
+Release build:
 
 ```bash
 make release
 ```
 
-O binário gerado ficará em `bin/dmmr_orbit`.
+Generated binary:
 
-## Uso
+```text
+bin/dmmr_orbit
+```
 
-O binário aceita os parâmetros:
+## Running
 
-- `-f <arquivo.conf>` - caminho para o arquivo de configuração
-- `-d 0|1` - 0 = executar em foreground, 1 = executar como daemon
-
-### Executar em foreground
+Foreground mode:
 
 ```bash
 ./bin/dmmr_orbit -f etc/dmmr_orbit.conf -d 0
 ```
 
-### Executar como daemon
+Daemon mode:
 
 ```bash
 ./bin/dmmr_orbit -f etc/dmmr_orbit.conf -d 1
 ```
 
-## Configuração
+## Command Line Parameters
 
-O arquivo padrão de exemplo está em `etc/dmmr_orbit.conf`. Ele inclui parâmetros como:
+| Parameter | Description |
+|------------|------------|
+| -f | Configuration file |
+| -d 0 | Run in foreground |
+| -d 1 | Run as daemon |
 
-- `SCHEDULER_PREEMPTIVE_DEADLINE`
-- `SLEEP_TIME`
-- `SESSION_SIZE`
-- `CIRCLE_BUFFER_SIZE`
-- `MAX_PORTS`
-- `REAL_TIME_DEAD_LINE`
-- `REAL_TIME_USER_DEFINED`
-- `TRUNK_ACCEPT_URI`
-- `TRUNK_DISPATCH_URI`
-- `RB_LOG_LEVEL`
+Example:
 
-O arquivo de configuração define os valores usados pelo servidor, pelo parser e pelo scheduler.
-
-## Plugins e emulação em tempo real
-
-O DMMR Orbit usa uma interface de plugin simples baseada em callbacks, projetada para comportamento de emulação de tempo real.
-
-A interface principal está em `src/plugin/include/dmmr_plugin.h` e define:
-
-- `struct dmmr_plugin` com:
-  - `void (*load)(void);`
-  - `void (*reload)(void);`
-- `struct dmmr_plugin *new_dmmr_plugin(struct dmmr_session_connection_manager*, struct cfg_server_server*);`
-
-No servidor, o plugin é instanciado e carregado em `src/server/dmmr_server.c`:
-
-```c
-plugin = new_dmmr_plugin(session_manager, &cfg);
-plugin->load();
+```bash
+./bin/dmmr_orbit -f etc/dmmr_orbit.conf -d 0
 ```
 
-A implementação atual em `src/plugin/dmmr_trunk_plugin.c` faz a integração com o gerenciador de sessões e registra callbacks de rede para aceitação, conexão, despacho e fechamento de sessões.
+## Configuration
 
-Como se trata de um emulador de tempo real, as operações do plugin não são chamadas de forma síncrona tradicional: o plugin usa callbacks para reagir a eventos de I/O e manter a lógica de sessão dentro do loop de runtime.
+The configuration file controls scheduler behavior, session limits, buffer sizes, network endpoints, and runtime parameters.
 
-Isso significa:
+Examples of configurable values:
 
-- o servidor cria e inicializa o plugin;
-- o plugin registra handlers de eventos de rede;
-- o plugin administra sessões em tempo real por callbacks de `accept`, `connect`, `dispatch` e `close`.
+- SCHEDULER_PREEMPTIVE_DEADLINE
+- SLEEP_TIME
+- SESSION_SIZE
+- CIRCLE_BUFFER_SIZE
+- MAX_PORTS
+- REAL_TIME_DEAD_LINE
+- REAL_TIME_USER_DEFINED
+- TRUNK_ACCEPT_URI
+- TRUNK_DISPATCH_URI
+- RB_LOG_LEVEL
 
-Essa arquitetura garante que o DMMR Orbit possa comportar-se como um emulador de tempo real, reagindo a eventos de rede conforme eles ocorrem.
+Default configuration:
 
-O scheduler interno também suporta pré-empção por deadline, com um limite configurável (`SCHEDULER_PREEMPTIVE_DEADLINE`). A lógica de envio é delegada a um thread de scheduler que dispara o despacho quando o prazo de tempo real está prestes a expirar.
+```text
+etc/dmmr_orbit.conf
+```
 
-## Observações
+## Real-Time Emulation Model
 
-- O projeto gera automaticamente `src/parser/scanner.c` e `src/parser/scanner.h` a partir de `src/parser/scanner.l` usando `flex`.
-- Se os diretórios `build/` ou `bin/` não existirem, o `make` irá criá-los automaticamente.
-- O servidor atual depende de um arquivo de configuração válido passado via `-f`.
+DMMR Orbit was created as a real-time emulation platform.
 
-## Limpeza
+Instead of processing traffic through synchronous request/response flows, runtime behavior is driven by network events and callback execution.
 
-Para remover artefatos de compilação:
+The system operates through:
+
+1. Network event detection
+2. Session association
+3. Callback execution
+4. Scheduler evaluation
+5. Dispatch processing
+6. Deadline enforcement
+
+This architecture allows experiments involving:
+
+- QoS strategies
+- Session scheduling
+- Traffic shaping
+- Runtime orchestration
+- Event-driven communication systems
+
+## Plugin System
+
+Plugins are loaded by the server and register callbacks responsible for handling runtime events.
+
+The default trunk plugin integrates with:
+
+- Accept events
+- Connect events
+- Dispatch events
+- Close events
+
+This enables custom traffic processing without modifying the core runtime.
+
+## Research Goals
+
+DMMR Orbit serves as a research and experimentation platform for:
+
+- Real-time emulation
+- Session-oriented networking
+- Scheduling algorithms
+- QoS mechanisms
+- Event-driven architectures
+- Runtime traffic orchestration
+
+## Clean Build Artifacts
 
 ```bash
 make clean
 ```
 
-## Licença
+## License
 
-Este projeto está disponível apenas para aprendizado e uso educacional.
-Uso comercial não é permitido sem autorização prévia.
+## License
 
-Se quiser usar todo o código ou parte dele, entre em contato com:
+This project is licensed under the terms described in the `LICENSE` file.
 
-`agsilveira.7@gmail.com`
+Copyright (c) 2026 by Alessadro Silveira
+
+The source code is available for learning, study, and educational purposes.
+
+For licensing inquiries:
+
+agsilveira.7@gmail.com
